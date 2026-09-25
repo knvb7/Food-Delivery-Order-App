@@ -2,23 +2,22 @@ package com.dmg.fooddelivery.repository;
 
 import com.dmg.fooddelivery.model.DeliveryPartner;
 
-import jakarta.persistence.LockModeType;
-
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
 public interface DeliveryPartnerRepository extends JpaRepository<DeliveryPartner, Long> {
 
-    Optional<DeliveryPartner> findByUserId(long userId);
+    @Query(value = "SELECT * FROM delivery_partners WHERE user_id = :userId", nativeQuery = true)
+    Optional<DeliveryPartner> findByUserId(@Param("userId") long userId);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select p from DeliveryPartner p where p.id = :id")
-    Optional<DeliveryPartner> findLockedById(long id);
+    @Query(value = "SELECT * FROM delivery_partners WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<DeliveryPartner> findLockedById(@Param("id") long id);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select p from DeliveryPartner p where p.user.id = :userId")
-    Optional<DeliveryPartner> findLockedByUserId(long userId);
+    @Query(
+            value = "SELECT * FROM delivery_partners WHERE user_id = :userId FOR UPDATE",
+            nativeQuery = true)
+    Optional<DeliveryPartner> findLockedByUserId(@Param("userId") long userId);
 }

@@ -43,3 +43,16 @@ The identity header and local payment ledger are explicit assignment simplificat
 The later readability update replaced local `var` declarations and wildcard imports with explicit types/imports, expanded compact statements and control flow, and formatted all Java sources, the Maven POM, and manual request bodies. Configuration moved from `application.yml` to `application.properties` with the same settings and environment defaults.
 
 After this update, `mvn clean compile` compiled all 54 Java files successfully. A manual launch on port 18081 with a disposable H2 database started successfully, and a catalog request returned HTTP 200 with the seeded restaurants. Source inspection found no remaining `var` declarations or wildcard imports; `git diff --check` was clean. No automated tests were written or run.
+
+## Native SQL follow-up
+
+All custom repository queries, including previously derived finders, now declare `@Query(nativeQuery = true)`. Named parameters use explicit `@Param` bindings. Paginated finders include matching native count queries, and native locking queries use `FOR UPDATE` in place of JPA `@Lock`. The order status filter is bound as its stored string name. Standard inherited JPA persistence operations remain unchanged.
+
+`mvn clean compile` succeeded after the change. Individual manual requests against a disposable H2 database on port 18082 confirmed:
+
+- Restaurant/menu pagination and city filtering, with correct counts using page size 1.
+- Order placement, status filtering, admin/customer visibility, and an empty result for another customer.
+- Owner acceptance, available-order listing, partner claim, preparation, pickup, delivery, and partner release.
+- Review creation, native average-rating calculation, paginated reviews, and notification inbox retrieval.
+
+These checks exercise native SQL syntax and mappings through the running application. No automated tests or concurrent-request checks were written or run.

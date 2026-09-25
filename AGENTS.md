@@ -21,6 +21,8 @@ The user initially requested tests, then explicitly instructed: "do not write an
 - Separate annotations, fields, methods, and logical blocks with readable line breaks and spacing.
 - Keep application configuration in `src/main/resources/application.properties`, not YAML.
 - Keep transactions in service implementations, HTTP mapping in controllers, and persistence in JPA repositories.
+- Write custom repository queries as native SQL with `@Query(nativeQuery = true)` and explicit `@Param` bindings.
+- Use SQL `FOR UPDATE` for native locking queries, and provide matching native `countQuery` statements for paginated queries.
 - Use the X-User-Id demo header with simple database-backed role and ownership checks.
 - Preserve database locking and lock ordering when changing stock, assignments, or lifecycle code.
 - Do not claim concurrency has been verified by tests when only static inspection or manual checks have been performed.

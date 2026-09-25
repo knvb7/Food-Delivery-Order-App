@@ -1,44 +1,89 @@
 package com.dmg.fooddelivery.repository;
 
 import com.dmg.fooddelivery.model.CustomerOrder;
-import com.dmg.fooddelivery.model.OrderStatus;
-
-import jakarta.persistence.LockModeType;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
-import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
 public interface OrderRepository extends JpaRepository<CustomerOrder, Long> {
 
+    @Query(
+            value =
+                    """
+                    SELECT *
+                    FROM orders
+                    WHERE customer_id = :customerId
+                      AND idempotency_key = :idempotencyKey
+                    """,
+            nativeQuery = true)
     Optional<CustomerOrder> findByCustomerIdAndIdempotencyKey(
-            long customerId, String idempotencyKey);
+            @Param("customerId") long customerId, @Param("idempotencyKey") String idempotencyKey);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select o from CustomerOrder o where o.id = :id")
-    Optional<CustomerOrder> findLockedById(long id);
+    @Query(value = "SELECT * FROM orders WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<CustomerOrder> findLockedById(@Param("id") long id);
 
     @Query(
-            """
-select o from CustomerOrder o where (:status is null or o.status = :status)
-and (:role = 'ADMIN' or (:role = 'CUSTOMER' and o.customer.id = :userId)
-or (:role = 'OWNER' and o.restaurant.owner.id = :userId)
-or (:role = 'PARTNER' and o.partner.id in (select p.id from DeliveryPartner p where p.user.id = :userId)))
-""")
+            value =
+                    """
+                    SELECT o.*
+                    FROM orders o
+                    JOIN restaurants r ON r.id = o.restaurant_id
+                    WHERE (:status IS NULL OR o.status = :status)
+                      AND (
+                          :role = 'ADMIN'
+                          OR (:role = 'CUSTOMER' AND o.customer_id = :userId)
+                          OR (:role = 'OWNER' AND r.owner_id = :userId)
+                          OR (:role = 'PARTNER' AND o.partner_id IN (
+                              SELECT p.id FROM delivery_partners p WHERE p.user_id = :userId
+                          ))
+                      )
+                    """,
+            countQuery =
+                    """
+                    SELECT COUNT(*)
+                    FROM orders o
+                    JOIN restaurants r ON r.id = o.restaurant_id
+                    WHERE (:status IS NULL OR o.status = :status)
+                      AND (
+                          :role = 'ADMIN'
+                          OR (:role = 'CUSTOMER' AND o.customer_id = :userId)
+                          OR (:role = 'OWNER' AND r.owner_id = :userId)
+                          OR (:role = 'PARTNER' AND o.partner_id IN (
+                              SELECT p.id FROM delivery_partners p WHERE p.user_id = :userId
+                          ))
+                      )
+                    """,
+            nativeQuery = true)
     Page<CustomerOrder> findVisible(
-            long userId, String role, OrderStatus status, Pageable pageable);
+            @Param("userId") long userId,
+            @Param("role") String role,
+            @Param("status") String status,
+            Pageable pageable);
 
-    @EntityGraph(attributePaths = "restaurant")
     @Query(
-            """
-            select o from CustomerOrder o where o.restaurant.city.id = :cityId
-            and o.partner is null and o.status in (com.dmg.fooddelivery.model.OrderStatus.ACCEPTED,
-            com.dmg.fooddelivery.model.OrderStatus.PREPARING)
-            """)
-    Page<CustomerOrder> findAvailable(long cityId, Pageable pageable);
+            value =
+                    """
+                    SELECT o.*
+                    FROM orders o
+                    JOIN restaurants r ON r.id = o.restaurant_id
+                    WHERE r.city_id = :cityId
+                      AND o.partner_id IS NULL
+                      AND o.status IN ('ACCEPTED', 'PREPARING')
+                    """,
+            countQuery =
+                    """
+                    SELECT COUNT(*)
+                    FROM orders o
+                    JOIN restaurants r ON r.id = o.restaurant_id
+                    WHERE r.city_id = :cityId
+                      AND o.partner_id IS NULL
+                      AND o.status IN ('ACCEPTED', 'PREPARING')
+                    """,
+            nativeQuery = true)
+    Page<CustomerOrder> findAvailable(@Param("cityId") long cityId, Pageable pageable);
 }

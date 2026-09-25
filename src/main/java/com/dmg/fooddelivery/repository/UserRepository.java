@@ -2,19 +2,19 @@ package com.dmg.fooddelivery.repository;
 
 import com.dmg.fooddelivery.model.User;
 
-import jakarta.persistence.LockModeType;
-
 import org.springframework.data.jpa.repository.JpaRepository;
-import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 
 import java.util.Optional;
 
 public interface UserRepository extends JpaRepository<User, Long> {
 
-    boolean existsByUsername(String username);
+    @Query(
+            value = "SELECT COUNT(*) > 0 FROM app_users WHERE username = :username",
+            nativeQuery = true)
+    boolean existsByUsername(@Param("username") String username);
 
-    @Lock(LockModeType.PESSIMISTIC_WRITE)
-    @Query("select u from User u where u.id = :id")
-    Optional<User> findLockedById(long id);
+    @Query(value = "SELECT * FROM app_users WHERE id = :id FOR UPDATE", nativeQuery = true)
+    Optional<User> findLockedById(@Param("id") long id);
 }

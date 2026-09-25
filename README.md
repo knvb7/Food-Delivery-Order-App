@@ -21,6 +21,8 @@ mvn spring-boot:run
 
 The API runs at `http://localhost:8080`. H2 stores data in `./data/food-delivery.mv.db`, so orders survive application restarts. Hibernate creates/updates the schema from the JPA models. No database installation is needed.
 
+Interactive Swagger documentation is available at `http://localhost:8080/swagger-ui.html` while the application is running. The generated OpenAPI JSON is available at `http://localhost:8080/v3/api-docs`.
+
 Configuration is defined in `src/main/resources/application.properties`:
 
 | Setting | Default | Purpose |
@@ -140,7 +142,7 @@ Request validation rejects missing required values, invalid enums, unknown JSON 
 ```text
 src/main/java/com/dmg/fooddelivery/
 ├── model/          JPA entities, roles, order lifecycle
-├── repository/     Spring Data JpaRepository interfaces and locking queries
+├── repository/     Spring Data JpaRepository interfaces with native SQL queries
 ├── controller/     REST endpoints and request validation
 ├── service/        Service interfaces
 │   └── impl/       Business logic and transaction boundaries
@@ -151,6 +153,8 @@ src/main/java/com/dmg/fooddelivery/
 
 Controllers depend on service interfaces. Implementations use constructor injection and JPA repositories. Lombok removes entity getter/setter and constructor boilerplate. DTOs prevent persistence relationships from leaking into JSON. `open-in-view=false` keeps data loading inside service transactions.
 
+Custom repository finders use SQL table/column names and `@Query(nativeQuery = true)`, with explicit parameter bindings and count queries for pagination. Locking queries use SQL `FOR UPDATE`. Standard inherited `JpaRepository` operations such as `save` and `findById` still manage entity persistence; there are no custom JPQL queries.
+
 Java code uses explicit types and imports, four-space indentation, braces for control flow, and one statement per line. `.editorconfig` and `AGENTS.md` record these conventions for future changes.
 
 ## Rules, assumptions, and correctness
@@ -158,7 +162,7 @@ Java code uses explicit types and imports, four-space indentation, braces for co
 - **One restaurant per order.** Up to 50 distinct items, 1–100 units each. Duplicate lines are rejected rather than silently combined. Price and item name are copied into order items so future menu edits do not change old orders.
 - **Stock means units available to sell.** Placement deducts stock. Rejection/cancellation returns it. Delivery does not deduct it again. Initial stock and each stock adjustment are bounded to one million units; accumulated stock uses a nonnegative `long` so a later refund can restore units even after restocking.
 - **Atomic checkout.** The order, its items, captured payment record, stock changes, and pending event share one `@Transactional` operation. Any exception rolls them back together. There are no real charges: `TEST_SUCCESS` captures locally and `TEST_DECLINE` returns 402. A real external payment provider cannot be made atomic with H2 merely by adding `@Transactional`; it would require a different integration design.
-- **Stock contention.** `@Lock(PESSIMISTIC_WRITE)` locks each menu item until commit. Basket items are locked in ascending ID order. An H2 check constraint also prevents negative stock. Menu updates and stock adjustments acquire the same item lock.
+- **Stock contention.** Native `SELECT ... FOR UPDATE` queries lock each menu item until commit. Basket items are locked in ascending ID order. An H2 check constraint also prevents negative stock. Menu updates and stock adjustments acquire the same item lock.
 - **Safe retries.** `Idempotency-Key` is required (1–80 letters, digits, `.`, `_`, `:`, or `-`) and scoped to the customer. A customer-row lock serializes the first use of a key. A unique database constraint backs it up. The same normalized request returns the existing order with 200 and `Idempotency-Replayed: true`; a different request with that key returns 409. A failed placement does not retain its key. Keys do not expire in this implementation.
 - **Lifecycle.** `PLACED → ACCEPTED → PREPARING → OUT_FOR_DELIVERY → DELIVERED`. The restaurant owner accepts and starts preparation. Only the assigned partner performs pickup and delivery. Only `PLACED` orders may become `REJECTED` (owner) or `CANCELLED` (customer); both atomically restore stock and refund the simulated payment. These final states cannot be reopened. Authorized repeats of the current status have no extra side effects.
 - **Assignment.** A partner claims an accepted/preparing order in their own city. One partner has at most one active order; one order has at most one partner. Claiming locks the order first, then the partner. Delivery follows the same lock order and releases the partner. Repeating the winning claim is harmless. Relocation/deactivation of a busy partner is rejected.

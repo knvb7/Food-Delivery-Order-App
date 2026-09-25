@@ -176,12 +176,13 @@ public class OrderServiceImpl implements OrderService {
     @Override
     public PageResponse<OrderSummary> list(long actorId, OrderStatus status, int page, int size) {
         User user = users.get(actorId);
+        String statusName = status == null ? null : status.name();
 
         return PageResponse.from(
                 orders.findVisible(
                                 actorId,
                                 user.getRole().name(),
-                                status,
+                                statusName,
                                 PageResponse.request(page, size))
                         .map(OrderSummary::from));
     }
