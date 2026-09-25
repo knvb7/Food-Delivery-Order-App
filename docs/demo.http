@@ -1,0 +1,107 @@
+# Manual request collection. No scripts, assertions, or automated tests.
+# Run each request individually. IDs below assume a fresh seeded database.
+@base = http://localhost:8080
+@orderId = 1
+
+### Browse cities
+GET {{base}}/api/cities
+
+### Browse restaurants in Mumbai
+GET {{base}}/api/restaurants?cityId=1
+
+### Browse menu
+GET {{base}}/api/restaurants/1/menu
+
+### Create a customer
+POST {{base}}/api/customers
+Content-Type: application/json
+
+{"username":"new-customer"}
+
+### Admin creates a city
+POST {{base}}/api/admin/cities
+X-User-Id: 1
+Content-Type: application/json
+
+{"name":"Delhi","active":true}
+
+### Owner adds stock
+POST {{base}}/api/restaurants/1/menu/1/stock
+X-User-Id: 2
+Content-Type: application/json
+
+{"delta":5}
+
+### Customer places an order; set orderId above from the response
+POST {{base}}/api/orders
+X-User-Id: 4
+Idempotency-Key: lunch-001
+Content-Type: application/json
+
+{"restaurantId":1,"items":[{"menuItemId":1,"quantity":2}],"deliveryAddress":"42 Lake Road, Mumbai","paymentToken":"TEST_SUCCESS"}
+
+### Owner accepts
+PATCH {{base}}/api/orders/{{orderId}}/status
+X-User-Id: 2
+Content-Type: application/json
+
+{"status":"ACCEPTED"}
+
+### Partner views available orders (no customer addresses)
+GET {{base}}/api/delivery/orders/available
+X-User-Id: 6
+
+### Partner claims
+POST {{base}}/api/orders/{{orderId}}/claim
+X-User-Id: 6
+
+### Owner starts preparing
+PATCH {{base}}/api/orders/{{orderId}}/status
+X-User-Id: 2
+Content-Type: application/json
+
+{"status":"PREPARING"}
+
+### Assigned partner picks up
+PATCH {{base}}/api/orders/{{orderId}}/status
+X-User-Id: 6
+Content-Type: application/json
+
+{"status":"OUT_FOR_DELIVERY"}
+
+### Assigned partner delivers
+PATCH {{base}}/api/orders/{{orderId}}/status
+X-User-Id: 6
+Content-Type: application/json
+
+{"status":"DELIVERED"}
+
+### Customer tracks order with payment and history
+GET {{base}}/api/orders/{{orderId}}
+X-User-Id: 4
+
+### Customer reviews delivery
+POST {{base}}/api/orders/{{orderId}}/review
+X-User-Id: 4
+Content-Type: application/json
+
+{"rating":5,"comment":"Arrived warm and on time"}
+
+### Restaurant rating and reviews
+GET {{base}}/api/restaurants/1/reviews
+
+### Customer notification inbox (delivered asynchronously)
+GET {{base}}/api/notifications
+X-User-Id: 4
+
+### Partner is available again after delivery
+GET {{base}}/api/delivery/me
+X-User-Id: 6
+
+### Simulated declined payment: 402, with no committed order or stock deduction
+POST {{base}}/api/orders
+X-User-Id: 4
+Idempotency-Key: declined-001
+Content-Type: application/json
+
+{"restaurantId":1,"items":[{"menuItemId":1,"quantity":1}],"deliveryAddress":"42 Lake Road, Mumbai","paymentToken":"TEST_DECLINE"}
