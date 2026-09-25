@@ -9,10 +9,10 @@ import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.method.annotation.HandlerMethodValidationException;
@@ -41,11 +41,6 @@ public class ApiExceptionHandler {
         return ResponseEntity.badRequest().body(ApiError.of(400, "INVALID_REQUEST", "Invalid or missing request data"));
     }
 
-    @ExceptionHandler(AccessDeniedException.class)
-    ResponseEntity<ApiError> forbidden(AccessDeniedException ex) {
-        return ResponseEntity.status(403).body(ApiError.of(403, "FORBIDDEN", "You cannot access this resource"));
-    }
-
     @ExceptionHandler(DataIntegrityViolationException.class)
     ResponseEntity<ApiError> integrity(DataIntegrityViolationException ex) {
         return ResponseEntity.status(409).body(ApiError.of(409, "CONFLICT", "This change conflicts with existing data"));
@@ -64,6 +59,11 @@ public class ApiExceptionHandler {
     @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
     ResponseEntity<ApiError> method(HttpRequestMethodNotSupportedException ex) {
         return ResponseEntity.status(405).body(ApiError.of(405, "METHOD_NOT_ALLOWED", "HTTP method not supported"));
+    }
+
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    ResponseEntity<ApiError> mediaType(HttpMediaTypeNotSupportedException ex) {
+        return ResponseEntity.status(415).body(ApiError.of(415, "UNSUPPORTED_MEDIA_TYPE", "Use Content-Type: application/json"));
     }
 
     @ExceptionHandler(Exception.class)

@@ -10,12 +10,14 @@
 
 ## Authorization for this implementation
 
-The user explicitly requested: "hey please read the problem statement and implement a good solution for it. Implement the test cases as well please". Unit and integration tests for this solution are therefore authorized.
+The user initially requested tests, then explicitly instructed: "do not write any tests for now". The latest instruction supersedes the earlier authorization. Do not write or run automated tests for this implementation; use compilation, builds, static review, and narrow manual API checks.
 
 ## Project conventions
 
-- Java 17 / Spring Boot; one application and one relational database.
-- Keep transactions in services, HTTP mapping in controllers, and SQL access in repositories.
+- Java 17 / Spring Boot / Spring Data JPA / H2; no Spring Security.
+- Use model, repository, controller, service, and service/impl packages.
+- Keep transactions in service implementations, HTTP mapping in controllers, and persistence in JPA repositories.
+- Use the X-User-Id demo header with simple database-backed role and ownership checks.
 - Preserve database locking and lock ordering when changing stock, assignments, or lifecycle code.
-- Never replace real concurrency tests with mocked repository tests.
+- Do not claim concurrency has been verified by tests when only static inspection or manual checks have been performed.
 - Keep assumptions and runnable examples in README.md. Do not add frontend, deployment, or CI tooling.
