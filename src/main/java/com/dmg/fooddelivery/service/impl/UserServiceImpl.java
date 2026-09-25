@@ -1,11 +1,17 @@
 package com.dmg.fooddelivery.service.impl;
 
-import com.dmg.fooddelivery.common.*;
-import com.dmg.fooddelivery.dto.UserDtos.*;
-import com.dmg.fooddelivery.model.*;
+import com.dmg.fooddelivery.common.Access;
+import com.dmg.fooddelivery.common.ApiException;
+import com.dmg.fooddelivery.dto.UserDtos.CreateUser;
+import com.dmg.fooddelivery.dto.UserDtos.Registration;
+import com.dmg.fooddelivery.dto.UserDtos.UserResponse;
+import com.dmg.fooddelivery.model.Role;
+import com.dmg.fooddelivery.model.User;
 import com.dmg.fooddelivery.repository.UserRepository;
 import com.dmg.fooddelivery.service.UserService;
+
 import lombok.RequiredArgsConstructor;
+
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -13,6 +19,7 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class UserServiceImpl implements UserService {
+
     private final UserRepository users;
 
     @Override
@@ -25,17 +32,24 @@ public class UserServiceImpl implements UserService {
     public UserResponse register(Registration input) {
         return save(input.username(), Role.CUSTOMER);
     }
+
     @Override
     @Transactional
     public UserResponse create(long actorId, CreateUser input) {
         Access.requireRole(get(actorId), Role.ADMIN);
+
         return save(input.username(), input.role());
     }
 
     private UserResponse save(String username, Role role) {
-        if (users.existsByUsername(username)) throw ApiException.conflict("Username already exists");
-        var user = new User();
-        user.setUsername(username); user.setRole(role);
+        if (users.existsByUsername(username)) {
+            throw ApiException.conflict("Username already exists");
+        }
+
+        User user = new User();
+        user.setUsername(username);
+        user.setRole(role);
+
         return UserResponse.from(users.save(user));
     }
 }

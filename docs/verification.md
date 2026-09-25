@@ -37,3 +37,9 @@ No automated tests or test harnesses were created or run. The user explicitly po
 Concurrency guarantees were inspected in the code: pessimistic item locks, deterministic basket lock order, order/partner lock order, customer-scoped idempotency locking, and database uniqueness/check constraints. No concurrent-request, load, failure-injection, unit, integration, or other automated tests were performed. The manual observations do not establish stress behavior or exhaustive endpoint coverage.
 
 The identity header and local payment ledger are explicit assignment simplifications, not production authentication or a real payment integration.
+
+## Formatting and properties follow-up
+
+The later readability update replaced local `var` declarations and wildcard imports with explicit types/imports, expanded compact statements and control flow, and formatted all Java sources, the Maven POM, and manual request bodies. Configuration moved from `application.yml` to `application.properties` with the same settings and environment defaults.
+
+After this update, `mvn clean compile` compiled all 54 Java files successfully. A manual launch on port 18081 with a disposable H2 database started successfully, and a catalog request returned HTTP 200 with the seeded restaurants. Source inspection found no remaining `var` declarations or wildcard imports; `git diff --check` was clean. No automated tests were written or run.

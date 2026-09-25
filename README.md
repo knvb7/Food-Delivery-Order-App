@@ -21,7 +21,7 @@ mvn spring-boot:run
 
 The API runs at `http://localhost:8080`. H2 stores data in `./data/food-delivery.mv.db`, so orders survive application restarts. Hibernate creates/updates the schema from the JPA models. No database installation is needed.
 
-Configuration:
+Configuration is defined in `src/main/resources/application.properties`:
 
 | Setting | Default | Purpose |
 | --- | --- | --- |
@@ -150,6 +150,8 @@ src/main/java/com/dmg/fooddelivery/
 ```
 
 Controllers depend on service interfaces. Implementations use constructor injection and JPA repositories. Lombok removes entity getter/setter and constructor boilerplate. DTOs prevent persistence relationships from leaking into JSON. `open-in-view=false` keeps data loading inside service transactions.
+
+Java code uses explicit types and imports, four-space indentation, braces for control flow, and one statement per line. `.editorconfig` and `AGENTS.md` record these conventions for future changes.
 
 ## Rules, assumptions, and correctness
 

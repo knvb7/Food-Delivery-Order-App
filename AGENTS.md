@@ -16,6 +16,10 @@ The user initially requested tests, then explicitly instructed: "do not write an
 
 - Java 17 / Spring Boot / Spring Data JPA / H2; no Spring Security.
 - Use model, repository, controller, service, and service/impl packages.
+- Use explicit Java types; do not use `var`.
+- Use four-space indentation, explicit imports, braces for control flow, and one statement per line.
+- Separate annotations, fields, methods, and logical blocks with readable line breaks and spacing.
+- Keep application configuration in `src/main/resources/application.properties`, not YAML.
 - Keep transactions in service implementations, HTTP mapping in controllers, and persistence in JPA repositories.
 - Use the X-User-Id demo header with simple database-backed role and ownership checks.
 - Preserve database locking and lock ordering when changing stock, assignments, or lifecycle code.

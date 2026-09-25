@@ -3,6 +3,7 @@ package com.dmg.fooddelivery.common;
 import org.springframework.http.HttpStatus;
 
 public class ApiException extends RuntimeException {
+
     private final HttpStatus status;
     private final String code;
 
@@ -12,8 +13,13 @@ public class ApiException extends RuntimeException {
         this.code = code;
     }
 
-    public HttpStatus status() { return status; }
-    public String code() { return code; }
+    public HttpStatus status() {
+        return status;
+    }
+
+    public String code() {
+        return code;
+    }
 
     public static ApiException notFound(String entity) {
         return new ApiException(HttpStatus.NOT_FOUND, "NOT_FOUND", entity + " not found");
@@ -28,6 +34,7 @@ public class ApiException extends RuntimeException {
     }
 
     public static ApiException forbidden() {
-        return new ApiException(HttpStatus.FORBIDDEN, "FORBIDDEN", "You cannot access this resource");
+        return new ApiException(
+                HttpStatus.FORBIDDEN, "FORBIDDEN", "You cannot access this resource");
     }
 }
