@@ -2,6 +2,7 @@ package com.dmg.fooddelivery.dto;
 
 import com.dmg.fooddelivery.model.CustomerOrder;
 import com.dmg.fooddelivery.model.OrderEvent;
+import com.dmg.fooddelivery.model.OrderItem;
 import com.dmg.fooddelivery.model.OrderStatus;
 import com.dmg.fooddelivery.model.Payment;
 
@@ -37,9 +38,22 @@ public final class OrderDtos {
 
     public record StatusUpdate(@NotNull OrderStatus status) {}
 
-    public record LineResponse(long menuItemId, String name, BigDecimal unitPrice, int quantity) {}
+    public record LineResponse(long menuItemId, String name, BigDecimal unitPrice, int quantity) {
+        public static LineResponse from(OrderItem item) {
+            return new LineResponse(
+                    item.getMenuItem().getId(),
+                    item.getName(),
+                    item.getUnitPrice(),
+                    item.getQuantity());
+        }
+    }
 
-    public record PaymentResponse(Payment.Status status, BigDecimal amount, String reference) {}
+    public record PaymentResponse(Payment.Status status, BigDecimal amount, String reference) {
+        public static PaymentResponse from(Payment payment) {
+            return new PaymentResponse(
+                    payment.getStatus(), payment.getAmount(), payment.getReference());
+        }
+    }
 
     public record EventResponse(
             long id, String type, OrderStatus status, long actorId, Instant createdAt) {
@@ -68,31 +82,23 @@ public final class OrderDtos {
             Instant createdAt,
             Instant updatedAt) {
         public static OrderResponse from(CustomerOrder order, List<OrderEvent> events) {
-            List<LineResponse> lines =
-                    order.getItems().stream()
-                            .map(
-                                    item ->
-                                            new LineResponse(
-                                                    item.getMenuItem().getId(),
-                                                    item.getName(),
-                                                    item.getUnitPrice(),
-                                                    item.getQuantity()))
-                            .toList();
-            Payment payment = order.getPayment();
+            List<LineResponse> lines = order.getItems().stream().map(LineResponse::from).toList();
+            List<EventResponse> history = events.stream().map(EventResponse::from).toList();
+            PaymentResponse payment = PaymentResponse.from(order.getPayment());
+            Long partnerId = order.getPartner() == null ? null : order.getPartner().getId();
 
             return new OrderResponse(
                     order.getId(),
                     order.getCustomer().getId(),
                     order.getRestaurant().getId(),
-                    order.getPartner() == null ? null : order.getPartner().getId(),
+                    partnerId,
                     order.getStatus(),
                     order.getDeliveryAddress(),
                     order.getTotal(),
                     "INR",
                     lines,
-                    new PaymentResponse(
-                            payment.getStatus(), payment.getAmount(), payment.getReference()),
-                    events.stream().map(EventResponse::from).toList(),
+                    payment,
+                    history,
                     order.getCreatedAt(),
                     order.getUpdatedAt());
         }

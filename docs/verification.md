@@ -56,3 +56,16 @@ All custom repository queries, including previously derived finders, now declare
 - Review creation, native average-rating calculation, paginated reviews, and notification inbox retrieval.
 
 These checks exercise native SQL syntax and mappings through the running application. No automated tests or concurrent-request checks were written or run.
+
+## Readability simplification
+
+Checkout now uses private helpers for basket validation, stock reservation, local payment persistence, and refunds. Response mappings use smaller conversion methods and named intermediate values. Native order-list queries share their filter with the corresponding pagination count query.
+
+`mvn compile` successfully compiled all 55 current Java source files. Individual manual requests against a disposable in-memory H2 database on port 18083 confirmed:
+
+- A two-item order returned HTTP 201 with total INR 480, captured payment, and item/event responses. Replaying the key with reordered basket lines returned HTTP 200 with the same order and payment reference.
+- Cancelling restored both item stocks and marked the payment refunded. A subsequent declined payment returned HTTP 402, leaving stock and the order count unchanged.
+- Customer and owner listings included an unassigned order; another customer's listing was empty. After acceptance and assignment, the partner's listing included the claimed order. Native pagination counts were correct with page size 1, including an admin listing spanning two orders.
+- Available-order listing, notification mapping, empty restaurant reviews, and quantity-validation error responses returned the expected data.
+
+Static inspection found no `var` declarations or wildcard imports, and `git diff --check` was clean. No automated tests were written or run, as requested. The manual application was stopped after these checks; the normal file database was untouched.

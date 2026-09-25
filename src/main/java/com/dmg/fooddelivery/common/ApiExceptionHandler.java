@@ -8,6 +8,7 @@ import org.springframework.dao.ConcurrencyFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.validation.FieldError;
 import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
@@ -40,22 +41,19 @@ public class ApiExceptionHandler {
     @ExceptionHandler(MethodArgumentNotValidException.class)
     ResponseEntity<ApiError> validation(MethodArgumentNotValidException exception) {
         Map<String, String> validationErrors = new LinkedHashMap<>();
-        exception
-                .getBindingResult()
-                .getFieldErrors()
-                .forEach(
-                        fieldError ->
-                                validationErrors.putIfAbsent(
-                                        fieldError.getField(), fieldError.getDefaultMessage()));
+        for (FieldError fieldError : exception.getBindingResult().getFieldErrors()) {
+            validationErrors.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage());
+        }
 
-        return ResponseEntity.badRequest()
-                .body(
-                        new ApiError(
-                                Instant.now(),
-                                400,
-                                "VALIDATION_FAILED",
-                                "Input validation failed",
-                                validationErrors));
+        ApiError error =
+                new ApiError(
+                        Instant.now(),
+                        400,
+                        "VALIDATION_FAILED",
+                        "Input validation failed",
+                        validationErrors);
+
+        return ResponseEntity.badRequest().body(error);
     }
 
     @ExceptionHandler({

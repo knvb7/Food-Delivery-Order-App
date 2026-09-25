@@ -32,6 +32,8 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 
 import lombok.RequiredArgsConstructor;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Isolation;
@@ -41,10 +43,13 @@ import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -71,31 +76,17 @@ public class OrderServiceImpl implements OrderService {
                         .findLockedById(actorId)
                         .orElseThrow(() -> ApiException.notFound("User"));
         Access.requireRole(customer, Role.CUSTOMER);
-        if (key == null || !key.matches("[a-zA-Z0-9._:-]{1,80}")) {
-            throw ApiException.badRequest(
-                    "Idempotency-Key must be 1..80 letters, digits, dots, underscores, colons or"
-                            + " hyphens");
-        }
-
-        List<LineInput> sortedItems =
-                input.items().stream()
-                        .sorted(Comparator.comparingLong(LineInput::menuItemId))
-                        .toList();
-        if (sortedItems.stream().map(LineInput::menuItemId).distinct().count()
-                != sortedItems.size()) {
-            throw ApiException.badRequest(
-                    "Duplicate menu items are not allowed; use quantity instead");
-        }
-
+        List<LineInput> sortedItems = validateAndSortItems(input, key);
         String requestFingerprint = requestHash(input, sortedItems);
         Optional<CustomerOrder> existingOrder =
                 orders.findByCustomerIdAndIdempotencyKey(actorId, key);
         if (existingOrder.isPresent()) {
-            if (!existingOrder.get().getRequestHash().equals(requestFingerprint)) {
+            CustomerOrder previousOrder = existingOrder.get();
+            if (!previousOrder.getRequestHash().equals(requestFingerprint)) {
                 throw ApiException.conflict("Idempotency-Key already used for a different request");
             }
 
-            return new Placement(response(existingOrder.get()), true);
+            return new Placement(response(previousOrder), true);
         }
 
         Restaurant restaurant =
@@ -112,53 +103,8 @@ public class OrderServiceImpl implements OrderService {
         order.setDeliveryAddress(input.deliveryAddress().trim());
         order.setIdempotencyKey(key);
         order.setRequestHash(requestFingerprint);
-        BigDecimal total = BigDecimal.ZERO;
-
-        // Every inventory-changing flow locks item rows in ascending ID order to avoid basket
-        // deadlocks.
-        for (LineInput requestedItem : sortedItems) {
-            MenuItem item =
-                    menuItems
-                            .findLockedById(requestedItem.menuItemId())
-                            .orElseThrow(() -> ApiException.notFound("Menu item"));
-            if (!item.getRestaurant().getId().equals(restaurant.getId())) {
-                throw ApiException.badRequest("All items must belong to the selected restaurant");
-            }
-
-            if (!item.isAvailable()) {
-                throw ApiException.conflict("Menu item " + item.getId() + " is unavailable");
-            }
-
-            item.adjustStock(-requestedItem.quantity());
-
-            OrderItem line = new OrderItem();
-            line.setOrder(order);
-            line.setMenuItem(item);
-            line.setName(item.getName());
-            line.setUnitPrice(item.getPrice());
-            line.setQuantity(requestedItem.quantity());
-            order.getItems().add(line);
-            total =
-                    total.add(
-                            item.getPrice().multiply(BigDecimal.valueOf(requestedItem.quantity())));
-        }
-
-        order.setTotal(total);
-        // This local payment ledger participates in the order transaction. No external gateway is
-        // called.
-
-        Payment payment = new Payment();
-        payment.setOrder(order);
-        payment.setAmount(total);
-        order.setPayment(payment);
-        orders.save(order);
-        if (input.paymentToken() == PaymentToken.TEST_DECLINE) {
-            throw new ApiException(
-                    HttpStatus.PAYMENT_REQUIRED,
-                    "PAYMENT_DECLINED",
-                    "The simulated payment was declined");
-        }
-
+        reserveItems(order, sortedItems);
+        saveOrderWithPayment(order, input.paymentToken());
         notifications.recordEvent(order, "PLACED", actorId);
 
         return new Placement(response(order), false);
@@ -177,14 +123,11 @@ public class OrderServiceImpl implements OrderService {
     public PageResponse<OrderSummary> list(long actorId, OrderStatus status, int page, int size) {
         User user = users.get(actorId);
         String statusName = status == null ? null : status.name();
+        Pageable pageable = PageResponse.request(page, size);
+        Page<CustomerOrder> result =
+                orders.findVisible(actorId, user.getRole().name(), statusName, pageable);
 
-        return PageResponse.from(
-                orders.findVisible(
-                                actorId,
-                                user.getRole().name(),
-                                statusName,
-                                PageResponse.request(page, size))
-                        .map(OrderSummary::from));
+        return PageResponse.from(result.map(OrderSummary::from));
     }
 
     @Override
@@ -200,19 +143,7 @@ public class OrderServiceImpl implements OrderService {
 
         order.getStatus().requireTransitionTo(target);
         if (target == OrderStatus.CANCELLED || target == OrderStatus.REJECTED) {
-            List<OrderItem> lines =
-                    order.getItems().stream()
-                            .sorted(Comparator.comparing(line -> line.getMenuItem().getId()))
-                            .toList();
-            for (OrderItem line : lines) {
-                MenuItem item =
-                        menuItems
-                                .findLockedById(line.getMenuItem().getId())
-                                .orElseThrow(() -> ApiException.notFound("Menu item"));
-                item.adjustStock(line.getQuantity());
-            }
-
-            order.getPayment().setStatus(Payment.Status.REFUNDED);
+            refundOrder(order);
         }
 
         if (target == OrderStatus.DELIVERED) {
@@ -275,6 +206,91 @@ public class OrderServiceImpl implements OrderService {
         return orders.findLockedById(id).orElseThrow(() -> ApiException.notFound("Order"));
     }
 
+    private MenuItem lockedMenuItem(long id) {
+        return menuItems.findLockedById(id).orElseThrow(() -> ApiException.notFound("Menu item"));
+    }
+
+    private List<LineInput> validateAndSortItems(PlaceOrder input, String key) {
+        if (key == null || !key.matches("[a-zA-Z0-9._:-]{1,80}")) {
+            throw ApiException.badRequest(
+                    "Idempotency-Key must be 1..80 letters, digits, dots, underscores, colons or"
+                        + " hyphens");
+        }
+
+        Set<Long> itemIds = new HashSet<>();
+        for (LineInput item : input.items()) {
+            if (!itemIds.add(item.menuItemId())) {
+                throw ApiException.badRequest(
+                        "Duplicate menu items are not allowed; use quantity instead");
+            }
+        }
+
+        List<LineInput> sortedItems = new ArrayList<>(input.items());
+        sortedItems.sort(Comparator.comparingLong(LineInput::menuItemId));
+
+        return sortedItems;
+    }
+
+    private void reserveItems(CustomerOrder order, List<LineInput> sortedItems) {
+        BigDecimal total = BigDecimal.ZERO;
+
+        // Ascending item IDs keep inventory lock ordering consistent across baskets.
+        for (LineInput requestedItem : sortedItems) {
+            MenuItem item = lockedMenuItem(requestedItem.menuItemId());
+            if (!item.getRestaurant().getId().equals(order.getRestaurant().getId())) {
+                throw ApiException.badRequest("All items must belong to the selected restaurant");
+            }
+
+            if (!item.isAvailable()) {
+                throw ApiException.conflict("Menu item " + item.getId() + " is unavailable");
+            }
+
+            item.adjustStock(-requestedItem.quantity());
+
+            OrderItem line = new OrderItem();
+            line.setOrder(order);
+            line.setMenuItem(item);
+            line.setName(item.getName());
+            line.setUnitPrice(item.getPrice());
+            line.setQuantity(requestedItem.quantity());
+            order.getItems().add(line);
+
+            BigDecimal lineTotal =
+                    item.getPrice().multiply(BigDecimal.valueOf(requestedItem.quantity()));
+            total = total.add(lineTotal);
+        }
+
+        order.setTotal(total);
+    }
+
+    private void saveOrderWithPayment(CustomerOrder order, PaymentToken token) {
+        Payment payment = new Payment();
+        payment.setOrder(order);
+        payment.setAmount(order.getTotal());
+        order.setPayment(payment);
+        orders.save(order);
+
+        // A declined local payment rolls back the order and reserved stock in the same transaction.
+        if (token == PaymentToken.TEST_DECLINE) {
+            throw new ApiException(
+                    HttpStatus.PAYMENT_REQUIRED,
+                    "PAYMENT_DECLINED",
+                    "The simulated payment was declined");
+        }
+    }
+
+    private void refundOrder(CustomerOrder order) {
+        List<OrderItem> lines = new ArrayList<>(order.getItems());
+        lines.sort(Comparator.comparing(line -> line.getMenuItem().getId()));
+
+        for (OrderItem line : lines) {
+            MenuItem item = lockedMenuItem(line.getMenuItem().getId());
+            item.adjustStock(line.getQuantity());
+        }
+
+        order.getPayment().setStatus(Payment.Status.REFUNDED);
+    }
+
     private OrderResponse response(CustomerOrder order) {
         return OrderResponse.from(order, events.findByOrderIdOrderByIdAsc(order.getId()));
     }
@@ -288,10 +304,10 @@ public class OrderServiceImpl implements OrderService {
                             input.deliveryAddress().trim(),
                             input.paymentToken());
 
-            return HexFormat.of()
-                    .formatHex(
-                            MessageDigest.getInstance("SHA-256")
-                                    .digest(mapper.writeValueAsBytes(canonicalRequest)));
+            byte[] requestBytes = mapper.writeValueAsBytes(canonicalRequest);
+            byte[] hash = MessageDigest.getInstance("SHA-256").digest(requestBytes);
+
+            return HexFormat.of().formatHex(hash);
         } catch (JsonProcessingException | NoSuchAlgorithmException exception) {
             throw new IllegalStateException("Cannot fingerprint order request", exception);
         }

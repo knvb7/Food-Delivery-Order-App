@@ -17,9 +17,12 @@ public final class Access {
     }
 
     public static void requireOwner(User user, Restaurant restaurant) {
-        if (user.getRole() != Role.ADMIN
-                && (user.getRole() != Role.OWNER
-                        || !user.getId().equals(restaurant.getOwner().getId()))) {
+        if (user.getRole() == Role.ADMIN) {
+            return;
+        }
+
+        requireRole(user, Role.OWNER);
+        if (!user.getId().equals(restaurant.getOwner().getId())) {
             throw ApiException.forbidden();
         }
     }

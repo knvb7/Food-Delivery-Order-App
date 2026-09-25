@@ -11,7 +11,9 @@ import com.dmg.fooddelivery.service.UserService;
 
 import lombok.RequiredArgsConstructor;
 
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -81,17 +83,20 @@ public class NotificationServiceImpl implements NotificationService {
     @Override
     public PageResponse<NotificationResponse> inbox(long actorId, int page, int size) {
         users.get(actorId);
+        Pageable pageable = PageResponse.request(page, size);
+        Page<Notification> result = notifications.findByRecipientId(actorId, pageable);
 
-        return PageResponse.from(
-                notifications
-                        .findByRecipientId(actorId, PageResponse.request(page, size))
-                        .map(
-                                notification ->
-                                        new NotificationResponse(
-                                                notification.getId(),
-                                                notification.getEvent().getOrder().getId(),
-                                                notification.getEvent().getType(),
-                                                notification.getEvent().getStatus(),
-                                                notification.getCreatedAt())));
+        return PageResponse.from(result.map(this::toResponse));
+    }
+
+    private NotificationResponse toResponse(Notification notification) {
+        OrderEvent event = notification.getEvent();
+
+        return new NotificationResponse(
+                notification.getId(),
+                event.getOrder().getId(),
+                event.getType(),
+                event.getStatus(),
+                notification.getCreatedAt());
     }
 }

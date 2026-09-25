@@ -19,6 +19,8 @@ The user initially requested tests, then explicitly instructed: "do not write an
 - Use explicit Java types; do not use `var`.
 - Use four-space indentation, explicit imports, braces for control flow, and one statement per line.
 - Separate annotations, fields, methods, and logical blocks with readable line breaks and spacing.
+- Prefer straightforward loops and named intermediate values over deeply nested stream or builder chains.
+- Keep public service flows easy to follow; use small private helpers for substantial steps without adding unnecessary layers.
 - Keep application configuration in `src/main/resources/application.properties`, not YAML.
 - Keep transactions in service implementations, HTTP mapping in controllers, and persistence in JPA repositories.
 - Write custom repository queries as native SQL with `@Query(nativeQuery = true)` and explicit `@Param` bindings.

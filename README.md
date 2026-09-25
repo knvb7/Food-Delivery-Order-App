@@ -157,6 +157,8 @@ Custom repository finders use SQL table/column names and `@Query(nativeQuery = t
 
 Java code uses explicit types and imports, four-space indentation, braces for control flow, and one statement per line. `.editorconfig` and `AGENTS.md` record these conventions for future changes.
 
+Start reading the order flow in `OrderServiceImpl.place`: validate and sort the basket, check for a repeated request, reserve items, save the order/payment, and record the event. Private helpers keep stock reservation and refunds separate from the main flow while staying in the same transaction. Native order-list queries share their filter with the count query, so pagination and visibility use the same rules.
+
 ## Rules, assumptions, and correctness
 
 - **One restaurant per order.** Up to 50 distinct items, 1–100 units each. Duplicate lines are rejected rather than silently combined. Price and item name are copied into order items so future menu edits do not change old orders.

@@ -75,11 +75,11 @@ public class ReviewServiceImpl implements ReviewService {
         Page<ReviewResponse> result =
                 reviews.findByRestaurantId(restaurantId, pageable).map(ReviewResponse::from);
         Double average = reviews.averageRating(restaurantId);
+        BigDecimal averageRating = null;
+        if (average != null) {
+            averageRating = BigDecimal.valueOf(average).setScale(2, RoundingMode.HALF_UP);
+        }
 
-        return new RestaurantReviews(
-                average == null
-                        ? null
-                        : BigDecimal.valueOf(average).setScale(2, RoundingMode.HALF_UP),
-                PageResponse.from(result));
+        return new RestaurantReviews(averageRating, PageResponse.from(result));
     }
 }
