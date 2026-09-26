@@ -12,12 +12,21 @@ GET {{base}}/api/restaurants?cityId=1
 ### Browse menu
 GET {{base}}/api/restaurants/1/menu
 
+### Search restaurant names within Mumbai (case-insensitive)
+GET {{base}}/api/restaurants?cityId=1&q=SPICE&size=1
+
+### Search menu names and descriptions within one restaurant
+GET {{base}}/api/restaurants/1/menu?q=rice&size=1
+
 ### Create a customer
 POST {{base}}/api/customers
 Content-Type: application/json
 
 {
-    "username": "new-customer"
+    "username": "new-customer",
+    "fullName": "New Customer",
+    "email": "new.customer@example.com",
+    "phoneNumber": "+919876543210"
 }
 
 ### Admin creates a city
@@ -142,4 +151,27 @@ Content-Type: application/json
     ],
     "deliveryAddress": "42 Lake Road, Mumbai",
     "paymentToken": "TEST_DECLINE"
+}
+
+### Owner sets daily overnight hours; times use the response's timeZone
+PUT {{base}}/api/restaurants/1/opening-hours
+X-User-Id: 2
+Content-Type: application/json
+
+{
+    "opensAt": "18:00",
+    "closesAt": "02:00"
+}
+
+### Read hours and current openNow status
+GET {{base}}/api/restaurants/1
+
+### Owner restores all-day opening
+PUT {{base}}/api/restaurants/1/opening-hours
+X-User-Id: 2
+Content-Type: application/json
+
+{
+    "opensAt": null,
+    "closesAt": null
 }

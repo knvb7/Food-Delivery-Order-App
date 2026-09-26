@@ -17,26 +17,31 @@ import com.dmg.fooddelivery.repository.OrderRepository;
 import com.dmg.fooddelivery.service.DeliveryService;
 import com.dmg.fooddelivery.service.UserService;
 
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
-@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class DeliveryServiceImpl implements DeliveryService {
 
-    private final DeliveryPartnerRepository partners;
-    private final CityRepository cities;
-    private final OrderRepository orders;
-    private final UserService users;
+    @Autowired
+    private DeliveryPartnerRepository deliveryPartnerRepository;
+
+    @Autowired
+    private CityRepository cityRepository;
+
+    @Autowired
+    private OrderRepository orderRepository;
+
+    @Autowired
+    private UserService userService;
 
     @Override
     @Transactional
     public PartnerResponse create(long actorId, PartnerInput input) {
-        Access.requireRole(users.get(actorId), Role.ADMIN);
-        User user = users.get(input.userId());
+        Access.requireRole(userService.get(actorId), Role.ADMIN);
+        User user = userService.get(input.userId());
         if (user.getRole() != Role.PARTNER) {
             throw ApiException.badRequest("userId must identify a PARTNER");
         }
@@ -46,15 +51,16 @@ public class DeliveryServiceImpl implements DeliveryService {
         partner.setCity(city(input.cityId()));
         partner.setActive(input.active());
 
-        return PartnerResponse.from(partners.save(partner));
+        return PartnerResponse.from(deliveryPartnerRepository.save(partner));
     }
 
     @Override
     @Transactional
     public PartnerResponse update(long actorId, long id, PartnerUpdate input) {
-        Access.requireRole(users.get(actorId), Role.ADMIN);
+        Access.requireRole(userService.get(actorId), Role.ADMIN);
         DeliveryPartner partner =
-                partners.findLockedById(id)
+                deliveryPartnerRepository
+                        .findLockedById(id)
                         .orElseThrow(() -> ApiException.notFound("Delivery partner"));
         if (partner.getActiveOrder() != null
                 && (!partner.getCity().getId().equals(input.cityId()) || !input.active())) {
@@ -70,10 +76,12 @@ public class DeliveryServiceImpl implements DeliveryService {
 
     @Override
     public PageResponse<PartnerResponse> list(long actorId, int page, int size) {
-        Access.requireRole(users.get(actorId), Role.ADMIN);
+        Access.requireRole(userService.get(actorId), Role.ADMIN);
 
         return PageResponse.from(
-                partners.findAll(PageResponse.request(page, size)).map(PartnerResponse::from));
+                deliveryPartnerRepository
+                        .findAll(PageResponse.request(page, size))
+                        .map(PartnerResponse::from));
     }
 
     @Override
@@ -89,18 +97,20 @@ public class DeliveryServiceImpl implements DeliveryService {
         }
 
         return PageResponse.from(
-                orders.findAvailable(partner.getCity().getId(), PageResponse.request(page, size))
+                orderRepository
+                        .findAvailable(partner.getCity().getId(), PageResponse.request(page, size))
                         .map(AvailableOrder::from));
     }
 
     private DeliveryPartner partnerForUser(long actorId) {
-        Access.requireRole(users.get(actorId), Role.PARTNER);
+        Access.requireRole(userService.get(actorId), Role.PARTNER);
 
-        return partners.findByUserId(actorId)
+        return deliveryPartnerRepository
+                .findByUserId(actorId)
                 .orElseThrow(() -> ApiException.notFound("Delivery partner profile"));
     }
 
     private City city(long id) {
-        return cities.findById(id).orElseThrow(() -> ApiException.notFound("City"));
+        return cityRepository.findById(id).orElseThrow(() -> ApiException.notFound("City"));
     }
 }

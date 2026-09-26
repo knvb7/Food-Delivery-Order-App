@@ -15,6 +15,8 @@ import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.Size;
 
 import java.math.BigDecimal;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
 
 public final class CatalogDtos {
 
@@ -33,6 +35,8 @@ public final class CatalogDtos {
             @NotBlank @Size(max = 150) String name,
             @NotBlank @Size(max = 500) String address,
             @NotNull Boolean active) {}
+
+    public record OpeningHoursInput(LocalTime opensAt, LocalTime closesAt) {}
 
     public record MenuInput(
             @NotBlank @Size(max = 150) String name,
@@ -58,15 +62,28 @@ public final class CatalogDtos {
     }
 
     public record RestaurantResponse(
-            long id, long cityId, long ownerId, String name, String address, boolean active) {
-        public static RestaurantResponse from(Restaurant restaurant) {
+            long id,
+            long cityId,
+            long ownerId,
+            String name,
+            String address,
+            boolean active,
+            LocalTime opensAt,
+            LocalTime closesAt,
+            String timeZone,
+            boolean openNow) {
+        public static RestaurantResponse from(Restaurant restaurant, ZonedDateTime now) {
             return new RestaurantResponse(
                     restaurant.getId(),
                     restaurant.getCity().getId(),
                     restaurant.getOwner().getId(),
                     restaurant.getName(),
                     restaurant.getAddress(),
-                    restaurant.isActive());
+                    restaurant.isActive(),
+                    restaurant.getOpensAt(),
+                    restaurant.getClosesAt(),
+                    now.getZone().getId(),
+                    restaurant.isOpenAt(now.toLocalTime()));
         }
     }
 

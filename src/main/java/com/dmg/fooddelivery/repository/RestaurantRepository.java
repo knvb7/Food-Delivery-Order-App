@@ -10,10 +10,16 @@ import org.springframework.data.repository.query.Param;
 
 public interface RestaurantRepository extends JpaRepository<Restaurant, Long> {
 
-    @Query(
-            value = "SELECT r.* FROM restaurants r WHERE :cityId IS NULL OR r.city_id = :cityId",
-            countQuery =
-                    "SELECT COUNT(*) FROM restaurants WHERE :cityId IS NULL OR city_id = :cityId",
+    String BROWSE_FILTER =
+            """
+            FROM restaurants r
+            WHERE (:cityId IS NULL OR r.city_id = :cityId)
+              AND (:search IS NULL OR LOCATE(LOWER(:search), LOWER(r.name)) > 0)
+            """;
+
+    @Query(value = "SELECT r.* " + BROWSE_FILTER,
+            countQuery = "SELECT COUNT(*) " + BROWSE_FILTER,
             nativeQuery = true)
-    Page<Restaurant> browse(@Param("cityId") Long cityId, Pageable pageable);
+    Page<Restaurant> browse(
+            @Param("cityId") Long cityId, @Param("search") String search, Pageable pageable);
 }

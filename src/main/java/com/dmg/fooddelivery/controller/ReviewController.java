@@ -7,8 +7,7 @@ import com.dmg.fooddelivery.service.ReviewService;
 
 import jakarta.validation.Valid;
 
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -22,10 +21,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api")
-@RequiredArgsConstructor
 public class ReviewController {
 
-    private final ReviewService reviews;
+    @Autowired
+    private ReviewService reviewService;
 
     @PostMapping("/orders/{id}/review")
     @ResponseStatus(HttpStatus.CREATED)
@@ -33,7 +32,7 @@ public class ReviewController {
             @RequestHeader("X-User-Id") long actorId,
             @PathVariable long id,
             @Valid @RequestBody ReviewInput input) {
-        return reviews.create(actorId, id, input);
+        return reviewService.create(actorId, id, input);
     }
 
     @GetMapping("/restaurants/{id}/reviews")
@@ -41,6 +40,6 @@ public class ReviewController {
             @PathVariable long id,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return reviews.list(id, page, size);
+        return reviewService.list(id, page, size);
     }
 }

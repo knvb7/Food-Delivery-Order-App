@@ -9,8 +9,7 @@ import com.dmg.fooddelivery.service.DeliveryService;
 
 import jakarta.validation.Valid;
 
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -25,16 +24,16 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api")
-@RequiredArgsConstructor
 public class DeliveryController {
 
-    private final DeliveryService delivery;
+    @Autowired
+    private DeliveryService deliveryService;
 
     @PostMapping("/admin/partners")
     @ResponseStatus(HttpStatus.CREATED)
     public PartnerResponse create(
             @RequestHeader("X-User-Id") long actorId, @Valid @RequestBody PartnerInput input) {
-        return delivery.create(actorId, input);
+        return deliveryService.create(actorId, input);
     }
 
     @PutMapping("/admin/partners/{id}")
@@ -42,7 +41,7 @@ public class DeliveryController {
             @RequestHeader("X-User-Id") long actorId,
             @PathVariable long id,
             @Valid @RequestBody PartnerUpdate input) {
-        return delivery.update(actorId, id, input);
+        return deliveryService.update(actorId, id, input);
     }
 
     @GetMapping("/admin/partners")
@@ -50,12 +49,12 @@ public class DeliveryController {
             @RequestHeader("X-User-Id") long actorId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return delivery.list(actorId, page, size);
+        return deliveryService.list(actorId, page, size);
     }
 
     @GetMapping("/delivery/me")
     public PartnerResponse me(@RequestHeader("X-User-Id") long actorId) {
-        return delivery.me(actorId);
+        return deliveryService.me(actorId);
     }
 
     @GetMapping("/delivery/orders/available")
@@ -63,6 +62,6 @@ public class DeliveryController {
             @RequestHeader("X-User-Id") long actorId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return delivery.available(actorId, page, size);
+        return deliveryService.available(actorId, page, size);
     }
 }

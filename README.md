@@ -1,181 +1,529 @@
 # Food Delivery Order Management
 
-A Spring Boot REST backend for the supplied [problem statement](Food%20Delivery%20Order%20Management.pdf). It supports cities, restaurants, menus, stock, customer orders, delivery claims, status notifications, and reviews.
+A Spring Boot REST API for managing a food-delivery workflow from catalog setup through order delivery and review.
 
-The implementation follows the requested **model → repository → service / service impl → controller** structure. It uses **Spring Data JPA and H2**, with **no Spring Security**. There is no frontend, deployment setup, or microservice infrastructure.
+The project implements the supplied [problem statement](Food%20Delivery%20Order%20Management.pdf) as one Java application backed by one relational database. It has no frontend and no production authentication layer.
 
-## Run locally
+## Contents
 
-Use Java 17 and Maven 3.6.3 or newer. Spring Boot is pinned to 3.5.16; see its [Java compatibility requirements](https://docs.spring.io/spring-boot/3.5/system-requirements.html). Ensure `mvn -version` reports a supported JDK; Java 17 is the verified version.
+- [Features](#features)
+- [Technology](#technology)
+- [Getting started](#getting-started)
+- [Swagger and API documentation](#swagger-and-api-documentation)
+- [Identity and roles](#identity-and-roles)
+- [Architecture](#architecture)
+- [Data model](#data-model)
+- [Order lifecycle](#order-lifecycle)
+- [API reference](#api-reference)
+- [Search and opening hours](#search-and-opening-hours)
+- [Example order flow](#example-order-flow)
+- [Business rules](#business-rules)
+- [Errors and validation](#errors-and-validation)
+- [Configuration](#configuration)
+- [Project structure](#project-structure)
+- [Scope and limitations](#scope-and-limitations)
+
+## Features
+
+- Manage users with admin, restaurant-owner, customer, and delivery-partner roles.
+- Manage cities, restaurants, menus, availability, prices, and stock.
+- Search restaurant names and menu names/descriptions with pagination.
+- Configure daily restaurant opening hours and reject new orders while closed.
+- Place idempotent customer orders with simulated payment processing.
+- Enforce order ownership, role permissions, and lifecycle transitions.
+- Let delivery partners discover and claim eligible orders in their city.
+- Restore stock and refund the simulated payment when an order is rejected or cancelled.
+- Record order history and deliver asynchronous in-application notifications.
+- Allow one customer review for each delivered order.
+- Expose interactive OpenAPI documentation through Swagger UI.
+
+## Technology
+
+| Component | Technology |
+| --- | --- |
+| Language | Java 17 |
+| Framework | Spring Boot 3.5.16 |
+| Web | Spring MVC |
+| Persistence | Spring Data JPA and Hibernate |
+| Database | H2 file database |
+| Validation | Jakarta Bean Validation |
+| API documentation | Springdoc OpenAPI 2.8.17 and Swagger UI |
+| Build | Maven |
+| Boilerplate reduction | Lombok for JPA entities |
+
+## Getting started
+
+### Prerequisites
+
+- JDK 17
+- Maven 3.6.3 or newer
+
+Confirm that Maven is using Java 17:
 
 ```bash
-mvn -DskipTests package
-java -jar target/food-delivery-1.0.0.jar
+mvn -version
 ```
 
-Alternatively:
+### Run with Maven
 
 ```bash
 mvn spring-boot:run
 ```
 
-The API runs at `http://localhost:8080`. H2 stores data in `./data/food-delivery.mv.db`, so orders survive application restarts. Hibernate creates/updates the schema from the JPA models. No database installation is needed.
+### Build and run the JAR
 
-Interactive Swagger documentation is available at `http://localhost:8080/swagger-ui.html` while the application is running. The generated OpenAPI JSON is available at `http://localhost:8080/v3/api-docs`.
+```bash
+mvn -DskipTests clean package
+java -jar target/food-delivery-1.0.0.jar
+```
 
-Configuration is defined in `src/main/resources/application.properties`:
+The application starts at `http://localhost:8080`.
 
-| Setting | Default | Purpose |
-| --- | --- | --- |
-| `DB_URL` | `jdbc:h2:file:./data/food-delivery;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=10000` | H2 database location |
-| `DB_USERNAME` | `sa` | Database username |
-| `DB_PASSWORD` | empty | Database password |
-| `DEMO_DATA` | `true` | Seed example data when the users table is empty |
-| `--server.port=...` | `8080` | HTTP port |
-| `--app.notifications.delay-ms=...` | `500` | Background notification polling interval |
+The default database is stored at `./data/food-delivery.mv.db`. Hibernate creates or updates the schema automatically.
 
-To start a disposable database, pass `--spring.datasource.url=jdbc:h2:mem:food-delivery`. To reset persistent demo data, stop the app and delete only its `data/food-delivery*` files. Leave demo seeding enabled for the first launch to create the initial admin. Disabling seeding does not remove existing data.
+### Use a temporary in-memory database
 
-## Demo users and role checks
+```bash
+mvn spring-boot:run \
+  -Dspring-boot.run.arguments="--spring.datasource.url=jdbc:h2:mem:food-delivery"
+```
 
-Send `X-User-Id` on write endpoints and private read endpoints. The service loads that user from H2 and checks their stored role and resource ownership. A client cannot pass a role in the header. Public catalog/review browsing and customer registration do not require this header.
+## Swagger and API documentation
 
-This header is a **demo identity selector, not authentication**: a caller can select another known user ID. Passwords, login, tokens, and Spring Security were deliberately removed at the user's request. The role checks demonstrate the required business rules, but do not verify the caller's real identity.
+Start the application, then open:
 
-Fresh database seed:
+- Swagger UI: `http://localhost:8080/swagger-ui.html`
+- OpenAPI JSON: `http://localhost:8080/v3/api-docs`
 
-| User ID | Username | Role | Scope |
+Swagger UI lists the request schemas, response schemas, parameters, and available operations generated from the Spring controllers and DTOs.
+
+## Identity and roles
+
+This project intentionally does not use Spring Security, passwords, sessions, or tokens.
+
+Protected operations receive an `X-User-Id` header. The application loads that user from the database and applies role and ownership checks.
+
+New user profiles require `username`, `fullName`, `email`, and `phoneNumber`. Email addresses are normalized to lowercase, phone numbers use an E.164-style format such as `+919876543210`, and username, email, and phone number must each be unique.
+
+```http
+X-User-Id: 4
+```
+
+This header is a demonstration identity selector, not secure authentication. A production system must replace it with authenticated user identity.
+
+### Roles
+
+| Role | Responsibilities |
+| --- | --- |
+| `ADMIN` | Manage users, cities, restaurants, and delivery-partner profiles; read all orders |
+| `OWNER` | Manage owned restaurant menus and opening hours; progress owned restaurant orders |
+| `CUSTOMER` | Place, read, cancel, and review personal orders |
+| `PARTNER` | View local available orders, claim one order, and complete delivery |
+
+### Seed data
+
+When `DEMO_DATA=true` and the users table is empty, the application creates:
+
+| ID | Username | Role | Associated data |
 | --- | --- | --- | --- |
-| 1 | admin | ADMIN | Manage users, cities, restaurants, partners; view orders |
-| 2 | owner | OWNER | Spice Kitchen, restaurant 1, Mumbai |
-| 3 | owner2 | OWNER | Garden Cafe, restaurant 2, Pune |
-| 4 | customer | CUSTOMER | Place, track, cancel, and review own orders |
-| 5 | customer2 | CUSTOMER | Separate customer for ownership demonstrations |
-| 6 | partner | PARTNER | Delivery partner profile 1, Mumbai |
-| 7 | partner2 | PARTNER | Delivery partner profile 2, Mumbai |
+| 1 | `admin` | `ADMIN` | Administrative account |
+| 2 | `owner` | `OWNER` | Spice Kitchen in Mumbai |
+| 3 | `owner2` | `OWNER` | Garden Cafe in Pune |
+| 4 | `customer` | `CUSTOMER` | Example customer |
+| 5 | `customer2` | `CUSTOMER` | Second example customer |
+| 6 | `partner` | `PARTNER` | Mumbai delivery-partner profile |
+| 7 | `partner2` | `PARTNER` | Second Mumbai delivery-partner profile |
 
-Menu items: `1` Paneer Bowl (INR 180, stock 20), `2` Rice Bowl (INR 120, stock 10), and `3` Pasta at Garden Cafe (INR 220, stock 15). Cities are Mumbai `1` and Pune `2`. These IDs apply to a fresh database; response IDs are authoritative after data changes.
+The seed also creates Mumbai and Pune, two restaurants, and three menu items. IDs are predictable only for a new database; API responses are authoritative after data changes.
+
+## Architecture
+
+The application uses a layered structure:
+
+```text
+HTTP request
+    │
+    ▼
+Controller ── validates and maps HTTP input
+    │
+    ▼
+Service interface / implementation ── business rules and transactions
+    │
+    ▼
+Repository ── JPA persistence, native queries, and database locks
+    │
+    ▼
+H2 database
+```
+
+### Layer responsibilities
+
+| Layer | Responsibility |
+| --- | --- |
+| Controller | Routes, headers, path/query parameters, request bodies, and HTTP status codes |
+| DTO | Validated request contracts and API response shapes |
+| Service | Role checks, ownership checks, workflows, transaction boundaries, and state changes |
+| Repository | Entity persistence, pagination, visibility queries, and row locking |
+| Model | JPA entities, relationships, constraints, and order status rules |
+| Config | Demo-data initialization, scheduled notification dispatch, and OpenAPI metadata |
+| Common | Shared access checks and consistent API error responses |
+
+Spring-managed dependencies use explicit field-level `@Autowired` injection. Repository and service fields use the lower-camel-case form of their type, such as `cityRepository` and `userService`.
+
+## Data model
+
+| Entity | Purpose | Important relationships |
+| --- | --- | --- |
+| `User` | Stores username, full name, email, phone number, and role | Owns restaurants, places orders, or backs a partner profile |
+| `City` | Service location | Contains restaurants and delivery partners |
+| `Restaurant` | Restaurant profile | Belongs to a city and an owner |
+| `MenuItem` | Sellable restaurant item | Belongs to one restaurant and tracks price, stock, and availability |
+| `CustomerOrder` | Customer purchase | Belongs to a customer and restaurant; may have one partner |
+| `OrderItem` | Historical order line | Stores item name, unit price, and quantity at purchase time |
+| `Payment` | Simulated payment state | One payment per order |
+| `DeliveryPartner` | Delivery profile | Connects a partner user to a city and optional active order |
+| `OrderEvent` | Audit and notification event | Records order status, actor, recipients, and dispatch state |
+| `Notification` | User inbox entry | Connects an event to one recipient |
+| `Review` | Delivered-order feedback | One review per order |
+
+Historical order lines copy the item name and price so later menu changes do not rewrite past orders.
+
+## Order lifecycle
+
+The standard successful flow is:
+
+```text
+PLACED → ACCEPTED → PREPARING → OUT_FOR_DELIVERY → DELIVERED
+```
+
+Alternative final transitions are:
+
+```text
+PLACED → REJECTED
+PLACED → CANCELLED
+```
+
+| Target status | Required actor |
+| --- | --- |
+| `ACCEPTED` | Restaurant owner |
+| `PREPARING` | Restaurant owner |
+| `OUT_FOR_DELIVERY` | Assigned delivery partner |
+| `DELIVERED` | Assigned delivery partner |
+| `REJECTED` | Restaurant owner |
+| `CANCELLED` | Customer who placed the order |
+
+A partner may claim an order only while it is `ACCEPTED` or `PREPARING`.
+
+## API reference
+
+All application endpoints start with `/api`.
+
+Paginated endpoints accept:
+
+- `page`: zero-based page number, default `0`, maximum `100000`
+- `size`: page size, default `20`, allowed range `1` to `100`
+
+Paginated responses contain `content`, `page`, `size`, and `totalElements`.
+
+### Users
+
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/customers` | Public | Register a customer |
+| `GET` | `/api/me` | `X-User-Id` | Return the selected user's profile |
+| `POST` | `/api/admin/users` | Admin | Create a user with a selected role |
+
+### Catalog
+
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| `GET` | `/api/cities` | Public | List cities |
+| `POST` | `/api/admin/cities` | Admin | Create a city |
+| `PUT` | `/api/admin/cities/{id}` | Admin | Update a city |
+| `GET` | `/api/restaurants` | Public | List restaurants; optionally filter by `cityId` and search name with `q` |
+| `GET` | `/api/restaurants/{id}` | Public | Get one restaurant |
+| `POST` | `/api/admin/restaurants` | Admin | Create a restaurant |
+| `PUT` | `/api/admin/restaurants/{id}` | Admin | Update restaurant name, address, and active state |
+| `PUT` | `/api/restaurants/{id}/opening-hours` | Owner or admin | Set or clear a restaurant's daily opening hours |
+| `GET` | `/api/restaurants/{restaurantId}/menu` | Public | List a restaurant's menu; search name/description with `q` |
+| `POST` | `/api/restaurants/{restaurantId}/menu` | Owner or admin | Create a menu item |
+| `PUT` | `/api/restaurants/{restaurantId}/menu/{id}` | Owner or admin | Update a menu item |
+| `POST` | `/api/restaurants/{restaurantId}/menu/{id}/stock` | Owner or admin | Apply a signed stock adjustment |
+
+### Delivery partners
+
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/admin/partners` | Admin | Create a delivery-partner profile |
+| `PUT` | `/api/admin/partners/{id}` | Admin | Change partner city or active state |
+| `GET` | `/api/admin/partners` | Admin | List delivery-partner profiles |
+| `GET` | `/api/delivery/me` | Partner | Get the current partner profile |
+| `GET` | `/api/delivery/orders/available` | Partner | List claimable orders in the partner's city |
+
+### Orders
+
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/orders` | Customer | Place an order; requires `Idempotency-Key` |
+| `GET` | `/api/orders` | Authenticated role | List visible orders; optionally filter by `status` |
+| `GET` | `/api/orders/{id}` | Authorized participant or admin | Get order details, payment, lines, and history |
+| `PATCH` | `/api/orders/{id}/status` | Authorized participant | Change order status |
+| `POST` | `/api/orders/{id}/claim` | Partner | Claim an accepted or preparing order |
+
+### Reviews and notifications
+
+| Method | Path | Access | Description |
+| --- | --- | --- | --- |
+| `POST` | `/api/orders/{id}/review` | Purchasing customer | Review a delivered order |
+| `GET` | `/api/restaurants/{id}/reviews` | Public | List reviews and average rating |
+| `GET` | `/api/notifications` | `X-User-Id` | List the selected user's notifications |
+
+## Search and opening hours
+
+### Search
+
+```http
+GET /api/restaurants?cityId=1&q=spice&page=0&size=10
+GET /api/restaurants/1/menu?q=rice&page=0&size=10
+```
+
+`q` performs a case-insensitive substring search. Restaurant search matches the name; menu search matches the name or description within the selected restaurant. Surrounding whitespace is trimmed, and a missing or blank query returns the normal listing. Queries are limited to 150 characters. Characters such as `%` and `_` are literal text, not wildcards. Native SQL applies the same filters to the result and pagination count.
+
+### Opening hours
+
+An owner can update their restaurant's hours; an admin can update any restaurant:
+
+```http
+PUT /api/restaurants/1/opening-hours
+X-User-Id: 2
+Content-Type: application/json
+
+{
+    "opensAt": "09:00",
+    "closesAt": "22:00"
+}
+```
+
+- Times use ISO local-time strings, such as `09:00` or `22:00:00`, in the configured restaurant timezone. The default is `Asia/Kolkata`, independent of the server's timezone.
+- The same window applies every day. Opening time is inclusive and closing time is exclusive.
+- Overnight windows are supported: `18:00` to `02:00` allows orders in the evening and after midnight until 02:00.
+- Both times must be supplied together and must differ. Set both to `null` to restore all-day opening. New and existing restaurants without configured hours keep their all-day behavior.
+- Restaurant responses include `opensAt`, `closesAt`, `timeZone`, and `openNow`. Inactive restaurants or cities always have `openNow: false`. Search results still include closed restaurants so their schedules remain visible.
+- Checkout checks opening hours before reserving stock or creating a payment and returns HTTP `409` while closed. Existing orders can still progress, and replaying a successful idempotency key returns the original order even after closing.
 
 ## Example order flow
 
-[docs/demo.http](docs/demo.http) contains individual requests you can send manually from an HTTP client. It contains no test scripts or assertions.
+Additional ready-to-run requests are available in [`docs/demo.http`](docs/demo.http).
 
-Place an order as customer 4:
+### 1. Place an order
 
 ```bash
 curl -i -X POST http://localhost:8080/api/orders \
   -H 'X-User-Id: 4' \
   -H 'Idempotency-Key: lunch-001' \
   -H 'Content-Type: application/json' \
-  -d '{"restaurantId":1,"items":[{"menuItemId":1,"quantity":2}],"deliveryAddress":"42 Lake Road, Mumbai","paymentToken":"TEST_SUCCESS"}'
+  -d '{
+    "restaurantId": 1,
+    "items": [{"menuItemId": 1, "quantity": 2}],
+    "deliveryAddress": "42 Lake Road, Mumbai",
+    "paymentToken": "TEST_SUCCESS"
+  }'
 ```
 
-Use the returned order ID in subsequent requests. For a fresh database it is `1`:
+`TEST_SUCCESS` captures a simulated payment. `TEST_DECLINE` returns HTTP `402` and rolls back the order.
+
+### 2. Accept and prepare the order
 
 ```bash
-# Restaurant owner accepts.
-curl -X PATCH http://localhost:8080/api/orders/1/status -H 'X-User-Id: 2' -H 'Content-Type: application/json' -d '{"status":"ACCEPTED"}'
+curl -X PATCH http://localhost:8080/api/orders/1/status \
+  -H 'X-User-Id: 2' \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"ACCEPTED"}'
 
-# Partner claims the order.
-curl -X POST http://localhost:8080/api/orders/1/claim -H 'X-User-Id: 6'
-
-# Restaurant owner starts preparation.
-curl -X PATCH http://localhost:8080/api/orders/1/status -H 'X-User-Id: 2' -H 'Content-Type: application/json' -d '{"status":"PREPARING"}'
-
-# Assigned partner picks up and delivers.
-curl -X PATCH http://localhost:8080/api/orders/1/status -H 'X-User-Id: 6' -H 'Content-Type: application/json' -d '{"status":"OUT_FOR_DELIVERY"}'
-curl -X PATCH http://localhost:8080/api/orders/1/status -H 'X-User-Id: 6' -H 'Content-Type: application/json' -d '{"status":"DELIVERED"}'
-
-# Customer reviews the delivered order and reads their notifications.
-curl -X POST http://localhost:8080/api/orders/1/review -H 'X-User-Id: 4' -H 'Content-Type: application/json' -d '{"rating":5,"comment":"Arrived warm and on time"}'
-curl http://localhost:8080/api/notifications -H 'X-User-Id: 4'
+curl -X PATCH http://localhost:8080/api/orders/1/status \
+  -H 'X-User-Id: 2' \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"PREPARING"}'
 ```
 
-## APIs
+### 3. Claim and deliver the order
 
-All paths below are under `/api`. Lists accept `page` (zero-based, default 0) and `size` (1–100, default 20), sort by descending ID, and return `content`, `page`, `size`, and `totalElements`.
+```bash
+curl -X POST http://localhost:8080/api/orders/1/claim \
+  -H 'X-User-Id: 6'
 
-| Method | Path | Access / purpose |
-| --- | --- | --- |
-| POST | `/customers` | Public; create a customer with `username` |
-| GET | `/me` | Selected user's ID, username, and role |
-| POST | `/admin/users` | Admin; create `username` and `role` |
-| GET | `/cities` | Public; list cities |
-| POST / PUT | `/admin/cities` / `/admin/cities/{id}` | Admin; `name`, `active` |
-| GET | `/restaurants?cityId=1` | Public; optional city filter |
-| GET | `/restaurants/{id}` | Public; restaurant details |
-| POST | `/admin/restaurants` | Admin; `cityId`, `ownerId`, `name`, `address`, `active` |
-| PUT | `/admin/restaurants/{id}` | Admin; update `name`, `address`, `active` |
-| GET | `/restaurants/{id}/menu` | Public; menu and stock |
-| POST | `/restaurants/{id}/menu` | Owner of restaurant or admin; `name`, `description`, `price`, `stock`, `available` |
-| PUT | `/restaurants/{id}/menu/{itemId}` | Owner or admin; `name`, `description`, `price`, `available` |
-| POST | `/restaurants/{id}/menu/{itemId}/stock` | Owner or admin; signed, nonzero `delta` |
-| POST / GET | `/admin/partners` | Admin; create (`userId`, `cityId`, `active`) or list profiles |
-| PUT | `/admin/partners/{id}` | Admin; `cityId`, `active` |
-| GET | `/delivery/me` | Partner; own profile and active order |
-| GET | `/delivery/orders/available` | Partner; claimable orders in own city |
-| POST | `/orders` | Customer; basket, address, simulated payment, and `Idempotency-Key` |
-| GET | `/orders?status=PLACED` | Role-scoped list; optional status filter |
-| GET | `/orders/{id}` | Customer, owner, assigned partner, or admin with access; includes payment and history |
-| PATCH | `/orders/{id}/status` | Authorized participant; `status` |
-| POST | `/orders/{id}/claim` | Partner; claim an accepted/preparing order |
-| POST | `/orders/{id}/review` | Customer who placed a delivered order; `rating`, `comment` |
-| GET | `/restaurants/{id}/reviews` | Public; reviews, count, and average rating |
-| GET | `/notifications` | Selected user's notification inbox |
+curl -X PATCH http://localhost:8080/api/orders/1/status \
+  -H 'X-User-Id: 6' \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"OUT_FOR_DELIVERY"}'
 
-The `X-User-Id` header is required unless access is marked public. Resource IDs are distinct: a user's ID is not their delivery partner profile's ID.
+curl -X PATCH http://localhost:8080/api/orders/1/status \
+  -H 'X-User-Id: 6' \
+  -H 'Content-Type: application/json' \
+  -d '{"status":"DELIVERED"}'
+```
 
-Request validation rejects missing required values, invalid enums, unknown JSON properties, negative quantities/prices, oversized baskets/text, and unsupported pagination. Monetary input permits at most two decimal places. Error responses have `timestamp`, `status`, `code`, `message`, and `fields`.
+### 4. Review the delivered order
 
-| HTTP status | Meaning |
+```bash
+curl -X POST http://localhost:8080/api/orders/1/review \
+  -H 'X-User-Id: 4' \
+  -H 'Content-Type: application/json' \
+  -d '{"rating":5,"comment":"Arrived warm and on time"}'
+```
+
+## Business rules
+
+### Ordering and stock
+
+- An order contains items from exactly one restaurant.
+- A basket supports up to 50 distinct menu items.
+- Each line quantity must be between 1 and 100.
+- Duplicate menu-item lines are rejected.
+- Stock is reserved inside the order transaction.
+- Menu items are locked in ascending ID order to reduce deadlock risk.
+- Rejected and cancelled orders restore their reserved stock.
+- Inactive cities, inactive restaurants, closed opening hours, unavailable items, and insufficient stock block new orders.
+
+### Idempotency
+
+- `Idempotency-Key` is required when placing an order.
+- Keys are scoped to the customer.
+- Repeating the same normalized request returns the existing order with HTTP `200` and `Idempotency-Replayed: true`.
+- Reusing the key for a different request returns HTTP `409`.
+- A newly created order returns HTTP `201` and `Idempotency-Replayed: false`.
+
+### Delivery assignment
+
+- A partner can hold at most one active order.
+- An order can have at most one delivery partner.
+- The partner and restaurant must belong to the same city.
+- Inactive partners cannot claim orders.
+- A busy partner cannot be moved to another city or deactivated.
+- Assignment-changing flows lock the order before the partner.
+
+### Notifications
+
+- Each order change creates an `OrderEvent` in the same transaction as the business change.
+- A scheduled worker converts pending events into inbox notifications.
+- Customer and restaurant owner receive order notifications; the assigned partner is included when present.
+- Notification creation and event acknowledgement commit together.
+
+### Reviews
+
+- Only the customer who placed the order may review it.
+- The order must be `DELIVERED`.
+- An order can be reviewed once.
+- Ratings must be between 1 and 5.
+
+## Errors and validation
+
+Errors use this response shape:
+
+```json
+{
+  "timestamp": "2026-09-26T10:15:30Z",
+  "status": 400,
+  "code": "VALIDATION_FAILED",
+  "message": "Input validation failed",
+  "fields": {
+    "username": "must match the required pattern"
+  }
+}
+```
+
+| Status | Meaning |
 | --- | --- |
-| 200 / 201 | Success / resource created |
-| 400 | Invalid input, missing header, or malformed JSON |
-| 402 | Simulated payment declined |
-| 403 | Wrong role or resource ownership |
-| 404 | Resource not found |
-| 409 | Stock, state, assignment, duplicate, or concurrency conflict |
-| 415 | Unsupported content type |
+| `400` | Invalid input, malformed JSON, invalid transition target, or missing header |
+| `402` | Simulated payment declined |
+| `403` | Role or ownership check failed |
+| `404` | Entity or endpoint not found |
+| `405` | HTTP method not supported |
+| `409` | Duplicate data, restaurant closed, stock conflict, lifecycle conflict, assignment conflict, or concurrent update |
+| `415` | Unsupported content type |
+| `500` | Unexpected server error |
 
-## Structure
+Unknown JSON fields are rejected. Usernames, text lengths, prices, quantities, stock changes, ratings, and pagination values are validated before service processing.
+
+## Configuration
+
+Configuration lives in [`src/main/resources/application.properties`](src/main/resources/application.properties).
+
+| Property or environment variable | Default | Purpose |
+| --- | --- | --- |
+| `DB_URL` | `jdbc:h2:file:./data/food-delivery;DB_CLOSE_ON_EXIT=FALSE;LOCK_TIMEOUT=10000` | JDBC connection URL |
+| `DB_USERNAME` | `sa` | Database username |
+| `DB_PASSWORD` | Empty | Database password |
+| `DEMO_DATA` | `true` | Seed demo data when the users table is empty |
+| `server.port` | `8080` | HTTP port |
+| `app.restaurant.time-zone` / `RESTAURANT_TIME_ZONE` | `Asia/Kolkata` | Timezone shared by all restaurant schedules |
+| `app.notifications.enabled` | `true` | Enable the scheduled notification worker |
+| `app.notifications.initial-delay-ms` | `5000` | Delay before the first notification scan |
+| `app.notifications.delay-ms` | `500` | Delay between notification scans |
+| `app.async.core-pool-size` | `2` | Core notification worker threads |
+| `app.async.max-pool-size` | `4` | Maximum notification worker threads |
+| `app.async.queue-capacity` | `100` | Queued notification tasks before caller-runs backpressure |
+| `spring.jpa.hibernate.ddl-auto` | `update` | Create or update the database schema |
+| `springdoc.swagger-ui.path` | `/swagger-ui.html` | Swagger UI path |
+| `springdoc.api-docs.path` | `/v3/api-docs` | OpenAPI JSON path |
+
+Example overrides:
+
+```bash
+DB_URL='jdbc:h2:mem:food-delivery' \
+DEMO_DATA=false \
+mvn spring-boot:run
+```
+
+To reset the default persistent database, stop the application and remove only the `data/food-delivery*` files.
+
+## Project structure
 
 ```text
 src/main/java/com/dmg/fooddelivery/
-├── model/          JPA entities, roles, order lifecycle
-├── repository/     Spring Data JpaRepository interfaces with native SQL queries
-├── controller/     REST endpoints and request validation
-├── service/        Service interfaces
-│   └── impl/       Business logic and transaction boundaries
-├── dto/            Request/response records and pagination
-├── common/         Role/ownership checks and consistent API errors
-└── config/         Demo seeding and notification worker
+├── FoodDeliveryApplication.java
+├── common/          access checks and API error handling
+├── config/          demo data, notification worker, and OpenAPI metadata
+├── controller/      HTTP endpoints
+├── dto/             request and response records
+├── model/           JPA entities and enums
+├── repository/      Spring Data repositories and native SQL queries
+└── service/
+    ├── *.java       service contracts
+    └── impl/        business logic and transaction boundaries
 ```
 
-Controllers depend on service interfaces. Implementations use constructor injection and JPA repositories. Lombok removes entity getter/setter and constructor boilerplate. DTOs prevent persistence relationships from leaking into JSON. `open-in-view=false` keeps data loading inside service transactions.
+Useful supporting files:
 
-Custom repository finders use SQL table/column names and `@Query(nativeQuery = true)`, with explicit parameter bindings and count queries for pagination. Locking queries use SQL `FOR UPDATE`. Standard inherited `JpaRepository` operations such as `save` and `findById` still manage entity persistence; there are no custom JPQL queries.
+- [`docs/demo.http`](docs/demo.http): manual API requests
+- [`docs/verification.md`](docs/verification.md): recorded build and manual verification notes
+- [`docs/walkthrough.md`](docs/walkthrough.md): implementation walkthrough outline
+- [`AGENTS.md`](AGENTS.md): project conventions for future changes
 
-Java code uses explicit types and imports, four-space indentation, braces for control flow, and one statement per line. `.editorconfig` and `AGENTS.md` record these conventions for future changes.
+## Scope and limitations
 
-Start reading the order flow in `OrderServiceImpl.place`: validate and sort the basket, check for a repeated request, reserve items, save the order/payment, and record the event. Private helpers keep stock reservation and refunds separate from the main flow while staying in the same transaction. Native order-list queries share their filter with the count query, so pagination and visibility use the same rules.
+- Payment is simulated locally; no money is charged.
+- `X-User-Id` is not authentication.
+- Notifications are stored in the database; there is no email, SMS, push provider, or message broker.
+- Delivery addresses are free text; there is no mapping, distance, or geocoding integration.
+- Currency is fixed to INR.
+- Opening hours use one daily window and one application-wide timezone; weekly schedules, split shifts, and holiday overrides are not implemented.
+- Taxes, discounts, fees, tips, partner reassignment, review editing, and account deletion are not implemented.
+- The embedded H2 database and `ddl-auto=update` are suitable for this assignment, not a production rollout.
+- The application is designed as one process and does not claim multi-node coordination.
 
-## Rules, assumptions, and correctness
+## Verification
 
-- **One restaurant per order.** Up to 50 distinct items, 1–100 units each. Duplicate lines are rejected rather than silently combined. Price and item name are copied into order items so future menu edits do not change old orders.
-- **Stock means units available to sell.** Placement deducts stock. Rejection/cancellation returns it. Delivery does not deduct it again. Initial stock and each stock adjustment are bounded to one million units; accumulated stock uses a nonnegative `long` so a later refund can restore units even after restocking.
-- **Atomic checkout.** The order, its items, captured payment record, stock changes, and pending event share one `@Transactional` operation. Any exception rolls them back together. There are no real charges: `TEST_SUCCESS` captures locally and `TEST_DECLINE` returns 402. A real external payment provider cannot be made atomic with H2 merely by adding `@Transactional`; it would require a different integration design.
-- **Stock contention.** Native `SELECT ... FOR UPDATE` queries lock each menu item until commit. Basket items are locked in ascending ID order. An H2 check constraint also prevents negative stock. Menu updates and stock adjustments acquire the same item lock.
-- **Safe retries.** `Idempotency-Key` is required (1–80 letters, digits, `.`, `_`, `:`, or `-`) and scoped to the customer. A customer-row lock serializes the first use of a key. A unique database constraint backs it up. The same normalized request returns the existing order with 200 and `Idempotency-Replayed: true`; a different request with that key returns 409. A failed placement does not retain its key. Keys do not expire in this implementation.
-- **Lifecycle.** `PLACED → ACCEPTED → PREPARING → OUT_FOR_DELIVERY → DELIVERED`. The restaurant owner accepts and starts preparation. Only the assigned partner performs pickup and delivery. Only `PLACED` orders may become `REJECTED` (owner) or `CANCELLED` (customer); both atomically restore stock and refund the simulated payment. These final states cannot be reopened. Authorized repeats of the current status have no extra side effects.
-- **Assignment.** A partner claims an accepted/preparing order in their own city. One partner has at most one active order; one order has at most one partner. Claiming locks the order first, then the partner. Delivery follows the same lock order and releases the partner. Repeating the winning claim is harmless. Relocation/deactivation of a busy partner is rejected.
-- **Asynchronous notifications.** Order events are a durable queue as well as the audit trail. A separate scheduled thread processes up to 100 pending events every 500 ms, writing inbox notifications for the customer, restaurant owner, and assigned partner. Recipients and status are captured when the event is created. Events before assignment have no partner recipient. Request threads only enqueue; they do not deliver notifications. Delivery and acknowledgement share a transaction, failed deliveries remain pending, and event/recipient uniqueness prevents duplicates. This demonstrates local inbox delivery, not email/SMS/push or a message broker.
-- **Reviews.** Only the purchasing customer can review a delivered order, once, with rating 1–5 and an optional empty comment. A locked order and a unique order/review constraint prevent duplicates. The average is `null` when no reviews exist.
-- **Scope and access.** Admins manage cities, restaurants, accounts, and delivery profiles; owners manage their own menus/orders. Admins can read all orders but do not impersonate owners or partners for lifecycle updates. Other roles can read only their own orders. Available delivery listings omit customer addresses; the assigned partner can see delivery details.
-- **Soft deactivation.** Cities/restaurants use `active`; menu items use `available`. Historical data is preserved. Catalog listings include inactive/unavailable entries with their flags. Deactivation prevents new orders validated after the change; an already validated checkout may finish. Existing orders can still progress. Restaurant city/owner are immutable through the API. Delivery addresses are free text and assumed to be in the restaurant's city; geocoding is out of scope.
-- **Other boundaries.** Currency is INR; money uses `BigDecimal`. No taxes, discounts, fees, real refunds, partner reassignment, account deletion, password management, or review editing. One Spring Boot process and embedded H2 are intended for this assignment, not a multi-node deployment. Hibernate `ddl-auto=update` keeps setup simple; database migrations and production capacity tuning are deferred.
+Run the complete integration suite with:
 
-## Verification and submission
+```bash
+mvn test
+```
 
-Automated tests were **not written or run**, following the user's latest instruction. Compilation, JAR packaging, and narrow manual API checks are used instead. See [docs/verification.md](docs/verification.md) for the observed results and limits. Concurrent-request correctness has been reviewed in code, not stress-tested.
+The suite covers every controller route, full order lifecycles, validation and rollback paths, asynchronous notification delivery, idempotency, stock restoration, and real concurrent requests for stock reservation and delivery-partner claims. Each test uses an isolated H2 database and does not touch the normal `./data` database.
 
-The repository includes the original PDF, the development instructions in [AGENTS.md](AGENTS.md), the [PDF skill used to read the assignment](docs/skills/pdf/SKILL.md), and an [AI workflow / recording outline](docs/walkthrough.md). The local Git history preserves implementation and simplification commits. Publishing a personal GitHub repository and recording the requested video remain submission steps for the owner; no remote repository or video has been created.
+To compile and package without executing the suite:
+
+```bash
+mvn -DskipTests clean package
+```

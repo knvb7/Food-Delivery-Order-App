@@ -7,8 +7,7 @@ import com.dmg.fooddelivery.service.UserService;
 
 import jakarta.validation.Valid;
 
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -20,26 +19,26 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api")
-@RequiredArgsConstructor
 public class UserController {
 
-    private final UserService users;
+    @Autowired
+    private UserService userService;
 
     @PostMapping("/customers")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse register(@Valid @RequestBody Registration input) {
-        return users.register(input);
+        return userService.register(input);
     }
 
     @PostMapping("/admin/users")
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse create(
             @RequestHeader("X-User-Id") long actorId, @Valid @RequestBody CreateUser input) {
-        return users.create(actorId, input);
+        return userService.create(actorId, input);
     }
 
     @GetMapping("/me")
     public UserResponse me(@RequestHeader("X-User-Id") long actorId) {
-        return UserResponse.from(users.get(actorId));
+        return UserResponse.from(userService.get(actorId));
     }
 }
