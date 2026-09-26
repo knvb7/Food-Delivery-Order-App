@@ -18,6 +18,15 @@ public class User extends BaseEntity {
     @Column(nullable = false, unique = true, length = 80)
     private String username;
 
+    @Column(name = "full_name", length = 120)
+    private String fullName;
+
+    @Column(unique = true, length = 254)
+    private String email;
+
+    @Column(name = "phone_number", unique = true, length = 16)
+    private String phoneNumber;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private Role role;

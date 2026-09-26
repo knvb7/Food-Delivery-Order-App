@@ -33,9 +33,7 @@ public final class Access {
                     case ADMIN -> true;
                     case CUSTOMER -> user.getId().equals(order.getCustomer().getId());
                     case OWNER -> user.getId().equals(order.getRestaurant().getOwner().getId());
-                    case PARTNER ->
-                            order.getPartner() != null
-                                    && user.getId().equals(order.getPartner().getUser().getId());
+                    case PARTNER -> order.getPartner() != null && user.getId().equals(order.getPartner().getUser().getId());
                 };
         if (!allowed) {
             throw ApiException.forbidden();

@@ -17,8 +17,7 @@ import com.dmg.fooddelivery.repository.ReviewRepository;
 import com.dmg.fooddelivery.service.ReviewService;
 import com.dmg.fooddelivery.service.UserService;
 
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -29,28 +28,36 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 
 @Service
-@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class ReviewServiceImpl implements ReviewService {
 
-    private final ReviewRepository reviews;
-    private final OrderRepository orders;
-    private final RestaurantRepository restaurants;
-    private final UserService users;
+    @Autowired
+    private ReviewRepository reviewRepository;
+
+    @Autowired
+    private OrderRepository orderRepository;
+
+    @Autowired
+    private RestaurantRepository restaurantRepository;
+
+    @Autowired
+    private UserService userService;
 
     @Override
     @Transactional
     public ReviewResponse create(long actorId, long orderId, ReviewInput input) {
-        User customer = users.get(actorId);
+        User customer = userService.get(actorId);
         Access.requireRole(customer, Role.CUSTOMER);
         CustomerOrder order =
-                orders.findLockedById(orderId).orElseThrow(() -> ApiException.notFound("Order"));
+                orderRepository
+                        .findLockedById(orderId)
+                        .orElseThrow(() -> ApiException.notFound("Order"));
         Access.requireOrderAccess(customer, order);
         if (order.getStatus() != OrderStatus.DELIVERED) {
             throw ApiException.conflict("Only delivered orders can be reviewed");
         }
 
-        if (reviews.existsByOrderId(orderId)) {
+        if (reviewRepository.existsByOrderId(orderId)) {
             throw ApiException.conflict("This order has already been reviewed");
         }
 
@@ -61,20 +68,22 @@ public class ReviewServiceImpl implements ReviewService {
         review.setRating(input.rating());
         review.setComment(input.comment().trim());
 
-        return ReviewResponse.from(reviews.save(review));
+        return ReviewResponse.from(reviewRepository.save(review));
     }
 
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public RestaurantReviews list(long restaurantId, int page, int size) {
         Pageable pageable = PageResponse.request(page, size);
-        if (!restaurants.existsById(restaurantId)) {
+        if (!restaurantRepository.existsById(restaurantId)) {
             throw ApiException.notFound("Restaurant");
         }
 
         Page<ReviewResponse> result =
-                reviews.findByRestaurantId(restaurantId, pageable).map(ReviewResponse::from);
-        Double average = reviews.averageRating(restaurantId);
+                reviewRepository
+                        .findByRestaurantId(restaurantId, pageable)
+                        .map(ReviewResponse::from);
+        Double average = reviewRepository.averageRating(restaurantId);
         BigDecimal averageRating = null;
         if (average != null) {
             averageRating = BigDecimal.valueOf(average).setScale(2, RoundingMode.HALF_UP);

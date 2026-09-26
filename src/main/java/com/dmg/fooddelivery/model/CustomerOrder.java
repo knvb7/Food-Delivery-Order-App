@@ -70,7 +70,7 @@ public class CustomerOrder extends BaseEntity {
     @OrderBy("menuItem.id ASC")
     private List<OrderItem> items = new ArrayList<>();
 
-    @OneToOne(mappedBy = "order", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    @OneToOne(mappedBy = "order", cascade = CascadeType.ALL)
     private Payment payment;
 
     @Column(nullable = false, updatable = false)

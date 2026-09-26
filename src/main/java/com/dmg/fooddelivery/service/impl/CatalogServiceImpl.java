@@ -195,11 +195,10 @@ public class CatalogServiceImpl implements CatalogService {
     @Override
     @Transactional
     public MenuResponse adjustStock(long actorId, long restaurantId, long id, long delta) {
-        MenuItem item = ownedItem(actorId, restaurantId, id);
-        if (delta == 0) {
+        //writing it earlier because it should be checked before the db query
+        if (delta == 0)
             throw ApiException.badRequest("Stock delta must be nonzero");
-        }
-
+        MenuItem item = ownedItem(actorId, restaurantId, id);
         item.adjustStock(delta);
 
         return MenuResponse.from(item);

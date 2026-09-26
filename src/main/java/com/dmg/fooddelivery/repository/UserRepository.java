@@ -15,6 +15,16 @@ public interface UserRepository extends JpaRepository<User, Long> {
             nativeQuery = true)
     boolean existsByUsername(@Param("username") String username);
 
+    @Query(
+            value = "SELECT COUNT(*) > 0 FROM app_users WHERE email = :email",
+            nativeQuery = true)
+    boolean existsByEmail(@Param("email") String email);
+
+    @Query(
+            value = "SELECT COUNT(*) > 0 FROM app_users WHERE phone_number = :phoneNumber",
+            nativeQuery = true)
+    boolean existsByPhoneNumber(@Param("phoneNumber") String phoneNumber);
+
     @Query(value = "SELECT * FROM app_users WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<User> findLockedById(@Param("id") long id);
 }
