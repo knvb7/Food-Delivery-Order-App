@@ -9,11 +9,11 @@ import com.dmg.fooddelivery.repository.OrderEventRepository;
 import com.dmg.fooddelivery.service.NotificationService;
 import com.dmg.fooddelivery.service.UserService;
 
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,13 +23,17 @@ import java.util.List;
 import java.util.Set;
 
 @Service
-@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class NotificationServiceImpl implements NotificationService {
 
-    private final OrderEventRepository events;
-    private final NotificationRepository notifications;
-    private final UserService users;
+    @Autowired
+    private OrderEventRepository orderEventRepository;
+
+    @Autowired
+    private NotificationRepository notificationRepository;
+
+    @Autowired
+    private UserService userService;
 
     @Override
     @Transactional(propagation = Propagation.MANDATORY)
@@ -45,18 +49,19 @@ public class NotificationServiceImpl implements NotificationService {
             event.setPartnerUserId(order.getPartner().getUser().getId());
         }
 
-        events.save(event);
+        orderEventRepository.save(event);
     }
 
     @Override
     public List<Long> pendingEvents() {
-        return events.findPendingIds(PageRequest.of(0, 100));
+        return orderEventRepository.findPendingIds(PageRequest.of(0, 100));
     }
 
     @Override
+    @Async("notificationTaskExecutor")
     @Transactional
     public void dispatch(long eventId) {
-        OrderEvent event = events.findLockedById(eventId).orElse(null);
+        OrderEvent event = orderEventRepository.findLockedById(eventId).orElse(null);
         if (event == null || event.isDispatched()) {
             return;
         }
@@ -72,7 +77,7 @@ public class NotificationServiceImpl implements NotificationService {
             Notification notification = new Notification();
             notification.setEvent(event);
             notification.setRecipientId(recipientId);
-            notifications.save(notification);
+            notificationRepository.save(notification);
         }
 
         // Both inbox delivery and acknowledgement commit together; a failure leaves the event
@@ -82,9 +87,9 @@ public class NotificationServiceImpl implements NotificationService {
 
     @Override
     public PageResponse<NotificationResponse> inbox(long actorId, int page, int size) {
-        users.get(actorId);
+        userService.get(actorId);
         Pageable pageable = PageResponse.request(page, size);
-        Page<Notification> result = notifications.findByRecipientId(actorId, pageable);
+        Page<Notification> result = notificationRepository.findByRecipientId(actorId, pageable);
 
         return PageResponse.from(result.map(this::toResponse));
     }

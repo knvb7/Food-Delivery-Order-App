@@ -1,7 +1,7 @@
 # Recording outline (under 10 minutes)
 
 1. **Problem and scope, 0:00–1:00.** Show the original PDF. Explain restaurants across cities, inventory, atomic checkout, lifecycle, delivery contention, notifications, and reviews. State that the owner requested a simpler JPA/H2 structure, no Spring Security, and no tests for now.
-2. **Project layout, 1:00–2:00.** Open `model`, `repository`, `controller`, `service`, and `service/impl`. Explain DTOs, constructor injection, H2 persistence, and why no frontend or deployment infrastructure was added.
+2. **Project layout, 1:00–2:00.** Open `model`, `repository`, `controller`, `service`, and `service/impl`. Explain DTOs, `@Autowired` field injection, H2 persistence, and why no frontend or deployment infrastructure was added.
 3. **Manual API demonstration, 2:00–5:00.** Start the application. Use `demo.http` to browse, place, accept, claim, prepare, deliver, and review. Show the durable history and notification inbox. Explain that `X-User-Id` selects a demo identity and does not authenticate a real caller.
 4. **Transactions and contention, 5:00–7:00.** Show `OrderServiceImpl.place`, repository pessimistic locks, deterministic item lock ordering, the unique idempotency key, and order-then-partner lock ordering. Demonstrate a declined payment and explain the local payment assumption.
 5. **Asynchronous delivery, 7:00–8:00.** Show the event model and scheduled notification worker. Explain recipient snapshots, rollback/retry, and idempotent inbox delivery.

@@ -7,6 +7,7 @@ import com.dmg.fooddelivery.dto.CatalogDtos.CityResponse;
 import com.dmg.fooddelivery.dto.CatalogDtos.MenuInput;
 import com.dmg.fooddelivery.dto.CatalogDtos.MenuResponse;
 import com.dmg.fooddelivery.dto.CatalogDtos.MenuUpdate;
+import com.dmg.fooddelivery.dto.CatalogDtos.OpeningHoursInput;
 import com.dmg.fooddelivery.dto.CatalogDtos.RestaurantInput;
 import com.dmg.fooddelivery.dto.CatalogDtos.RestaurantResponse;
 import com.dmg.fooddelivery.dto.CatalogDtos.RestaurantUpdate;
@@ -22,43 +23,56 @@ import com.dmg.fooddelivery.repository.RestaurantRepository;
 import com.dmg.fooddelivery.service.CatalogService;
 import com.dmg.fooddelivery.service.UserService;
 
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
+import java.time.LocalTime;
+import java.time.ZonedDateTime;
+
 @Service
-@RequiredArgsConstructor
-@Transactional(readOnly = true)
 public class CatalogServiceImpl implements CatalogService {
 
-    private final CityRepository cities;
-    private final RestaurantRepository restaurants;
-    private final MenuItemRepository menuItems;
-    private final UserService users;
+    @Autowired
+    private CityRepository cityRepository;
+
+    @Autowired
+    private RestaurantRepository restaurantRepository;
+
+    @Autowired
+    private MenuItemRepository menuItemRepository;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private Clock restaurantClock;
 
     @Override
     public PageResponse<CityResponse> cities(int page, int size) {
         return PageResponse.from(
-                cities.findAll(PageResponse.request(page, size)).map(CityResponse::from));
+                cityRepository.findAll(PageResponse.request(page, size)).map(CityResponse::from));
     }
 
     @Override
     @Transactional
     public CityResponse createCity(long actorId, CityInput input) {
-        Access.requireRole(users.get(actorId), Role.ADMIN);
+        Access.requireRole(userService.get(actorId), Role.ADMIN);
 
         City city = new City();
         city.setName(input.name().trim());
         city.setActive(input.active());
 
-        return CityResponse.from(cities.save(city));
+        return CityResponse.from(cityRepository.save(city));
     }
 
     @Override
     @Transactional
     public CityResponse updateCity(long actorId, long id, CityInput input) {
-        Access.requireRole(users.get(actorId), Role.ADMIN);
+        Access.requireRole(userService.get(actorId), Role.ADMIN);
         City city = city(id);
         city.setName(input.name().trim());
         city.setActive(input.active());
@@ -67,23 +81,29 @@ public class CatalogServiceImpl implements CatalogService {
     }
 
     @Override
-    public PageResponse<RestaurantResponse> restaurants(Long cityId, int page, int size) {
+    @Transactional(readOnly = true)
+    public PageResponse<RestaurantResponse> restaurants(
+            Long cityId, String query, int page, int size) {
+        String search = normalizeSearch(query);
+        Pageable pageable = PageResponse.request(page, size);
+        ZonedDateTime now = ZonedDateTime.now(restaurantClock);
+        Page<Restaurant> result = restaurantRepository.browse(cityId, search, pageable);
+
         return PageResponse.from(
-                restaurants
-                        .browse(cityId, PageResponse.request(page, size))
-                        .map(RestaurantResponse::from));
+                result.map(restaurant -> RestaurantResponse.from(restaurant, now)));
     }
 
     @Override
+    @Transactional(readOnly = true)
     public RestaurantResponse restaurant(long id) {
-        return RestaurantResponse.from(findRestaurant(id));
+        return restaurantResponse(findRestaurant(id));
     }
 
     @Override
     @Transactional
     public RestaurantResponse createRestaurant(long actorId, RestaurantInput input) {
-        Access.requireRole(users.get(actorId), Role.ADMIN);
-        User owner = users.get(input.ownerId());
+        Access.requireRole(userService.get(actorId), Role.ADMIN);
+        User owner = userService.get(input.ownerId());
         if (owner.getRole() != Role.OWNER) {
             throw ApiException.badRequest("ownerId must identify an OWNER");
         }
@@ -95,36 +115,59 @@ public class CatalogServiceImpl implements CatalogService {
         restaurant.setAddress(input.address().trim());
         restaurant.setActive(input.active());
 
-        return RestaurantResponse.from(restaurants.save(restaurant));
+        return restaurantResponse(restaurantRepository.save(restaurant));
     }
 
     @Override
     @Transactional
     public RestaurantResponse updateRestaurant(long actorId, long id, RestaurantUpdate input) {
-        Access.requireRole(users.get(actorId), Role.ADMIN);
+        Access.requireRole(userService.get(actorId), Role.ADMIN);
         Restaurant restaurant = findRestaurant(id);
         restaurant.setName(input.name().trim());
         restaurant.setAddress(input.address().trim());
         restaurant.setActive(input.active());
 
-        return RestaurantResponse.from(restaurant);
+        return restaurantResponse(restaurant);
     }
 
     @Override
-    public PageResponse<MenuResponse> menu(long restaurantId, int page, int size) {
-        findRestaurant(restaurantId);
+    @Transactional
+    public RestaurantResponse updateOpeningHours(long actorId, long id, OpeningHoursInput input) {
+        Restaurant restaurant = findRestaurant(id);
+        Access.requireOwner(userService.get(actorId), restaurant);
 
-        return PageResponse.from(
-                menuItems
-                        .findByRestaurantId(restaurantId, PageResponse.request(page, size))
-                        .map(MenuResponse::from));
+        LocalTime opensAt = input.opensAt();
+        LocalTime closesAt = input.closesAt();
+        if ((opensAt == null) != (closesAt == null)) {
+            throw ApiException.badRequest("Provide both opensAt and closesAt, or set both to null");
+        }
+
+        if (opensAt != null && opensAt.equals(closesAt)) {
+            throw ApiException.badRequest("Opening and closing times must be different");
+        }
+
+        restaurant.setOpensAt(opensAt);
+        restaurant.setClosesAt(closesAt);
+
+        return restaurantResponse(restaurant);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public PageResponse<MenuResponse> menu(long restaurantId, String query, int page, int size) {
+        findRestaurant(restaurantId);
+        String search = normalizeSearch(query);
+        Pageable pageable = PageResponse.request(page, size);
+        Page<MenuItem> result = menuItemRepository.browse(restaurantId, search, pageable);
+
+        return PageResponse.from(result.map(MenuResponse::from));
     }
 
     @Override
     @Transactional
     public MenuResponse createMenu(long actorId, long restaurantId, MenuInput input) {
         Restaurant restaurant = findRestaurant(restaurantId);
-        Access.requireOwner(users.get(actorId), restaurant);
+        Access.requireOwner(userService.get(actorId), restaurant);
 
         MenuItem item = new MenuItem();
         item.setRestaurant(restaurant);
@@ -134,7 +177,7 @@ public class CatalogServiceImpl implements CatalogService {
         item.setStock(input.stock());
         item.setAvailable(input.available());
 
-        return MenuResponse.from(menuItems.save(item));
+        return MenuResponse.from(menuItemRepository.save(item));
     }
 
     @Override
@@ -162,10 +205,29 @@ public class CatalogServiceImpl implements CatalogService {
         return MenuResponse.from(item);
     }
 
+    private String normalizeSearch(String query) {
+        if (query == null || query.isBlank()) {
+            return null;
+        }
+
+        String search = query.trim();
+        if (search.length() > 150) {
+            throw ApiException.badRequest("Search query must be at most 150 characters");
+        }
+
+        return search;
+    }
+
+    private RestaurantResponse restaurantResponse(Restaurant restaurant) {
+        return RestaurantResponse.from(restaurant, ZonedDateTime.now(restaurantClock));
+    }
+
     private MenuItem ownedItem(long actorId, long restaurantId, long id) {
-        Access.requireOwner(users.get(actorId), findRestaurant(restaurantId));
+        Access.requireOwner(userService.get(actorId), findRestaurant(restaurantId));
         MenuItem item =
-                menuItems.findLockedById(id).orElseThrow(() -> ApiException.notFound("Menu item"));
+                menuItemRepository
+                        .findLockedById(id)
+                        .orElseThrow(() -> ApiException.notFound("Menu item"));
         if (!item.getRestaurant().getId().equals(restaurantId)) {
             throw ApiException.notFound("Menu item in restaurant");
         }
@@ -174,10 +236,12 @@ public class CatalogServiceImpl implements CatalogService {
     }
 
     private City city(long id) {
-        return cities.findById(id).orElseThrow(() -> ApiException.notFound("City"));
+        return cityRepository.findById(id).orElseThrow(() -> ApiException.notFound("City"));
     }
 
     private Restaurant findRestaurant(long id) {
-        return restaurants.findById(id).orElseThrow(() -> ApiException.notFound("Restaurant"));
+        return restaurantRepository
+                .findById(id)
+                .orElseThrow(() -> ApiException.notFound("Restaurant"));
     }
 }

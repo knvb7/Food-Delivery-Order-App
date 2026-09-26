@@ -16,6 +16,7 @@ The user initially requested tests, then explicitly instructed: "do not write an
 
 - Java 17 / Spring Boot / Spring Data JPA / H2; no Spring Security.
 - Use model, repository, controller, service, and service/impl packages.
+- Use explicit `@Autowired` field injection for Spring-managed dependencies.
 - Use explicit Java types; do not use `var`.
 - Use four-space indentation, explicit imports, braces for control flow, and one statement per line.
 - Separate annotations, fields, methods, and logical blocks with readable line breaks and spacing.

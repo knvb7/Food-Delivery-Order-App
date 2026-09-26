@@ -11,8 +11,7 @@ import com.dmg.fooddelivery.service.OrderService;
 
 import jakarta.validation.Valid;
 
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -28,17 +27,17 @@ import java.net.URI;
 
 @RestController
 @RequestMapping("/api/orders")
-@RequiredArgsConstructor
 public class OrderController {
 
-    private final OrderService orders;
+    @Autowired
+    private OrderService orderService;
 
     @PostMapping
     public ResponseEntity<OrderResponse> place(
             @RequestHeader("X-User-Id") long actorId,
             @RequestHeader("Idempotency-Key") String key,
             @Valid @RequestBody PlaceOrder input) {
-        Placement placed = orders.place(actorId, input, key);
+        Placement placed = orderService.place(actorId, input, key);
 
         return ResponseEntity.status(placed.replayed() ? 200 : 201)
                 .location(URI.create("/api/orders/" + placed.order().id()))
@@ -52,12 +51,12 @@ public class OrderController {
             @RequestParam(required = false) OrderStatus status,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return orders.list(actorId, status, page, size);
+        return orderService.list(actorId, status, page, size);
     }
 
     @GetMapping("/{id}")
     public OrderResponse get(@RequestHeader("X-User-Id") long actorId, @PathVariable long id) {
-        return orders.get(actorId, id);
+        return orderService.get(actorId, id);
     }
 
     @PatchMapping("/{id}/status")
@@ -65,11 +64,11 @@ public class OrderController {
             @RequestHeader("X-User-Id") long actorId,
             @PathVariable long id,
             @Valid @RequestBody StatusUpdate input) {
-        return orders.transition(actorId, id, input.status());
+        return orderService.transition(actorId, id, input.status());
     }
 
     @PostMapping("/{id}/claim")
     public OrderResponse claim(@RequestHeader("X-User-Id") long actorId, @PathVariable long id) {
-        return orders.claim(actorId, id);
+        return orderService.claim(actorId, id);
     }
 }

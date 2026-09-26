@@ -5,6 +5,7 @@ import com.dmg.fooddelivery.dto.CatalogDtos.CityResponse;
 import com.dmg.fooddelivery.dto.CatalogDtos.MenuInput;
 import com.dmg.fooddelivery.dto.CatalogDtos.MenuResponse;
 import com.dmg.fooddelivery.dto.CatalogDtos.MenuUpdate;
+import com.dmg.fooddelivery.dto.CatalogDtos.OpeningHoursInput;
 import com.dmg.fooddelivery.dto.CatalogDtos.RestaurantInput;
 import com.dmg.fooddelivery.dto.CatalogDtos.RestaurantResponse;
 import com.dmg.fooddelivery.dto.CatalogDtos.RestaurantUpdate;
@@ -18,7 +19,7 @@ public interface CatalogService {
 
     CityResponse updateCity(long actorId, long id, CityInput input);
 
-    PageResponse<RestaurantResponse> restaurants(Long cityId, int page, int size);
+    PageResponse<RestaurantResponse> restaurants(Long cityId, String query, int page, int size);
 
     RestaurantResponse restaurant(long id);
 
@@ -26,7 +27,9 @@ public interface CatalogService {
 
     RestaurantResponse updateRestaurant(long actorId, long id, RestaurantUpdate input);
 
-    PageResponse<MenuResponse> menu(long restaurantId, int page, int size);
+    RestaurantResponse updateOpeningHours(long actorId, long id, OpeningHoursInput input);
+
+    PageResponse<MenuResponse> menu(long restaurantId, String query, int page, int size);
 
     MenuResponse createMenu(long actorId, long restaurantId, MenuInput input);
 

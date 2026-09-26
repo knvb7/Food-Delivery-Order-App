@@ -30,8 +30,7 @@ import com.dmg.fooddelivery.service.UserService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
-import lombok.RequiredArgsConstructor;
-
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.http.HttpStatus;
@@ -42,7 +41,9 @@ import org.springframework.transaction.annotation.Transactional;
 import java.math.BigDecimal;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -52,19 +53,38 @@ import java.util.Optional;
 import java.util.Set;
 
 @Service
-@RequiredArgsConstructor
 @Transactional(readOnly = true)
 public class OrderServiceImpl implements OrderService {
 
-    private final OrderRepository orders;
-    private final RestaurantRepository restaurants;
-    private final MenuItemRepository menuItems;
-    private final DeliveryPartnerRepository partners;
-    private final UserRepository userRepository;
-    private final OrderEventRepository events;
-    private final UserService users;
-    private final NotificationService notifications;
-    private final ObjectMapper mapper;
+    @Autowired
+    private OrderRepository orderRepository;
+
+    @Autowired
+    private RestaurantRepository restaurantRepository;
+
+    @Autowired
+    private MenuItemRepository menuItemRepository;
+
+    @Autowired
+    private DeliveryPartnerRepository deliveryPartnerRepository;
+
+    @Autowired
+    private UserRepository userRepository;
+
+    @Autowired
+    private OrderEventRepository orderEventRepository;
+
+    @Autowired
+    private UserService userService;
+
+    @Autowired
+    private NotificationService notificationService;
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    @Autowired
+    private Clock restaurantClock;
 
     @Override
     @Transactional
@@ -79,7 +99,7 @@ public class OrderServiceImpl implements OrderService {
         List<LineInput> sortedItems = validateAndSortItems(input, key);
         String requestFingerprint = requestHash(input, sortedItems);
         Optional<CustomerOrder> existingOrder =
-                orders.findByCustomerIdAndIdempotencyKey(actorId, key);
+                orderRepository.findByCustomerIdAndIdempotencyKey(actorId, key);
         if (existingOrder.isPresent()) {
             CustomerOrder previousOrder = existingOrder.get();
             if (!previousOrder.getRequestHash().equals(requestFingerprint)) {
@@ -90,11 +110,15 @@ public class OrderServiceImpl implements OrderService {
         }
 
         Restaurant restaurant =
-                restaurants
+                restaurantRepository
                         .findById(input.restaurantId())
                         .orElseThrow(() -> ApiException.notFound("Restaurant"));
         if (!restaurant.isActive() || !restaurant.getCity().isActive()) {
             throw ApiException.conflict("Restaurant or city is not accepting new orders");
+        }
+
+        if (!restaurant.isOpenAt(LocalTime.now(restaurantClock))) {
+            throw ApiException.conflict("Restaurant is closed outside its opening hours");
         }
 
         CustomerOrder order = new CustomerOrder();
@@ -105,7 +129,7 @@ public class OrderServiceImpl implements OrderService {
         order.setRequestHash(requestFingerprint);
         reserveItems(order, sortedItems);
         saveOrderWithPayment(order, input.paymentToken());
-        notifications.recordEvent(order, "PLACED", actorId);
+        notificationService.recordEvent(order, "PLACED", actorId);
 
         return new Placement(response(order), false);
     }
@@ -113,19 +137,20 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public OrderResponse get(long actorId, long id) {
-        CustomerOrder order = orders.findById(id).orElseThrow(() -> ApiException.notFound("Order"));
-        Access.requireOrderAccess(users.get(actorId), order);
+        CustomerOrder order =
+                orderRepository.findById(id).orElseThrow(() -> ApiException.notFound("Order"));
+        Access.requireOrderAccess(userService.get(actorId), order);
 
         return response(order);
     }
 
     @Override
     public PageResponse<OrderSummary> list(long actorId, OrderStatus status, int page, int size) {
-        User user = users.get(actorId);
+        User user = userService.get(actorId);
         String statusName = status == null ? null : status.name();
         Pageable pageable = PageResponse.request(page, size);
         Page<CustomerOrder> result =
-                orders.findVisible(actorId, user.getRole().name(), statusName, pageable);
+                orderRepository.findVisible(actorId, user.getRole().name(), statusName, pageable);
 
         return PageResponse.from(result.map(OrderSummary::from));
     }
@@ -133,7 +158,7 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderResponse transition(long actorId, long id, OrderStatus target) {
-        User actor = users.get(actorId);
+        User actor = userService.get(actorId);
         Access.requireRole(actor, target.requiredRole());
         CustomerOrder order = lockedOrder(id);
         Access.requireOrderAccess(actor, order);
@@ -148,14 +173,15 @@ public class OrderServiceImpl implements OrderService {
 
         if (target == OrderStatus.DELIVERED) {
             DeliveryPartner partner =
-                    partners.findLockedById(order.getPartner().getId())
+                    deliveryPartnerRepository
+                            .findLockedById(order.getPartner().getId())
                             .orElseThrow(() -> ApiException.notFound("Delivery partner"));
             partner.setActiveOrder(null);
         }
 
         order.setStatus(target);
         order.setUpdatedAt(Instant.now());
-        notifications.recordEvent(order, "STATUS_CHANGED", actorId);
+        notificationService.recordEvent(order, "STATUS_CHANGED", actorId);
 
         return response(order);
     }
@@ -163,12 +189,13 @@ public class OrderServiceImpl implements OrderService {
     @Override
     @Transactional
     public OrderResponse claim(long actorId, long id) {
-        Access.requireRole(users.get(actorId), Role.PARTNER);
+        Access.requireRole(userService.get(actorId), Role.PARTNER);
         // All assignment-changing flows lock order first, then partner, including delivery
         // completion.
         CustomerOrder order = lockedOrder(id);
         DeliveryPartner partner =
-                partners.findLockedByUserId(actorId)
+                deliveryPartnerRepository
+                        .findLockedByUserId(actorId)
                         .orElseThrow(() -> ApiException.notFound("Delivery partner profile"));
         if (order.getPartner() != null) {
             if (order.getPartner().getId().equals(partner.getId())) {
@@ -197,24 +224,26 @@ public class OrderServiceImpl implements OrderService {
         partner.setActiveOrder(order);
         order.setPartner(partner);
         order.setUpdatedAt(Instant.now());
-        notifications.recordEvent(order, "PARTNER_ASSIGNED", actorId);
+        notificationService.recordEvent(order, "PARTNER_ASSIGNED", actorId);
 
         return response(order);
     }
 
     private CustomerOrder lockedOrder(long id) {
-        return orders.findLockedById(id).orElseThrow(() -> ApiException.notFound("Order"));
+        return orderRepository.findLockedById(id).orElseThrow(() -> ApiException.notFound("Order"));
     }
 
     private MenuItem lockedMenuItem(long id) {
-        return menuItems.findLockedById(id).orElseThrow(() -> ApiException.notFound("Menu item"));
+        return menuItemRepository
+                .findLockedById(id)
+                .orElseThrow(() -> ApiException.notFound("Menu item"));
     }
 
     private List<LineInput> validateAndSortItems(PlaceOrder input, String key) {
         if (key == null || !key.matches("[a-zA-Z0-9._:-]{1,80}")) {
             throw ApiException.badRequest(
                     "Idempotency-Key must be 1..80 letters, digits, dots, underscores, colons or"
-                        + " hyphens");
+                            + " hyphens");
         }
 
         Set<Long> itemIds = new HashSet<>();
@@ -268,7 +297,7 @@ public class OrderServiceImpl implements OrderService {
         payment.setOrder(order);
         payment.setAmount(order.getTotal());
         order.setPayment(payment);
-        orders.save(order);
+        orderRepository.save(order);
 
         // A declined local payment rolls back the order and reserved stock in the same transaction.
         if (token == PaymentToken.TEST_DECLINE) {
@@ -292,7 +321,8 @@ public class OrderServiceImpl implements OrderService {
     }
 
     private OrderResponse response(CustomerOrder order) {
-        return OrderResponse.from(order, events.findByOrderIdOrderByIdAsc(order.getId()));
+        return OrderResponse.from(
+                order, orderEventRepository.findByOrderIdOrderByIdAsc(order.getId()));
     }
 
     private String requestHash(PlaceOrder input, List<LineInput> sortedItems) {
@@ -304,7 +334,7 @@ public class OrderServiceImpl implements OrderService {
                             input.deliveryAddress().trim(),
                             input.paymentToken());
 
-            byte[] requestBytes = mapper.writeValueAsBytes(canonicalRequest);
+            byte[] requestBytes = objectMapper.writeValueAsBytes(canonicalRequest);
             byte[] hash = MessageDigest.getInstance("SHA-256").digest(requestBytes);
 
             return HexFormat.of().formatHex(hash);
