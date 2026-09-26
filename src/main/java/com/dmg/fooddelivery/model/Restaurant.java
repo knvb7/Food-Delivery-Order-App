@@ -1,5 +1,7 @@
 package com.dmg.fooddelivery.model;
 
+import com.dmg.fooddelivery.common.ApiException;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -43,10 +45,20 @@ public class Restaurant extends BaseEntity {
     private LocalTime closesAt;
 
     public boolean isOpenAt(LocalTime time) {
+        return active && city.isActive() && isWithinOpeningHours(time);
+    }
+
+    public void requireAcceptingOrdersAt(LocalTime time) {
         if (!active || !city.isActive()) {
-            return false;
+            throw ApiException.conflict("Restaurant or city is not accepting new orders");
         }
 
+        if (!isWithinOpeningHours(time)) {
+            throw ApiException.conflict("Restaurant is closed outside its opening hours");
+        }
+    }
+
+    private boolean isWithinOpeningHours(LocalTime time) {
         if (opensAt == null && closesAt == null) {
             return true;
         }

@@ -113,13 +113,7 @@ public class OrderServiceImpl implements OrderService {
                 restaurantRepository
                         .findById(input.restaurantId())
                         .orElseThrow(() -> ApiException.notFound("Restaurant"));
-        if (!restaurant.isActive() || !restaurant.getCity().isActive()) {
-            throw ApiException.conflict("Restaurant or city is not accepting new orders");
-        }
-
-        if (!restaurant.isOpenAt(LocalTime.now(restaurantClock))) {
-            throw ApiException.conflict("Restaurant is closed outside its opening hours");
-        }
+        restaurant.requireAcceptingOrdersAt(LocalTime.now(restaurantClock));
 
         CustomerOrder order = new CustomerOrder();
         order.setCustomer(customer);

@@ -12,11 +12,23 @@ import java.util.Optional;
 
 public interface MenuItemRepository extends JpaRepository<MenuItem, Long> {
 
+    String BROWSE_FILTER =
+            """
+            FROM menu_items m
+            WHERE m.restaurant_id = :restaurantId
+              AND (:search IS NULL
+                   OR LOCATE(LOWER(:search), LOWER(m.name)) > 0
+                   OR LOCATE(LOWER(:search), LOWER(m.description)) > 0)
+            """;
+
     @Query(
-            value = "SELECT m.* FROM menu_items m WHERE m.restaurant_id = :restaurantId",
-            countQuery = "SELECT COUNT(*) FROM menu_items WHERE restaurant_id = :restaurantId",
+            value = "SELECT m.* " + BROWSE_FILTER,
+            countQuery = "SELECT COUNT(*) " + BROWSE_FILTER,
             nativeQuery = true)
-    Page<MenuItem> findByRestaurantId(@Param("restaurantId") long restaurantId, Pageable pageable);
+    Page<MenuItem> browse(
+            @Param("restaurantId") long restaurantId,
+            @Param("search") String search,
+            Pageable pageable);
 
     @Query(value = "SELECT * FROM menu_items WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<MenuItem> findLockedById(@Param("id") long id);
