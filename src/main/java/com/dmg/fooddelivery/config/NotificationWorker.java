@@ -18,7 +18,7 @@ public class NotificationWorker {
     @Autowired
     private NotificationService notificationService;
 
-    @Scheduled(initialDelayString = "${app.notifications.initial-delay-ms:5000}", fixedDelayString = "${app.notifications.delay-ms:500}")
+    @Scheduled(initialDelayString = "${app.notifications.initial-delay-ms:5000}", fixedDelayString = "${app.notifications.delay-ms:5000}")
     public void dispatch() {
         for (long id : notificationService.pendingEvents()) {
             notificationService.dispatch(id);

@@ -31,6 +31,7 @@ import java.util.List;
         uniqueConstraints = @UniqueConstraint(columnNames = {"customer_id", "idempotency_key"}),
         indexes = {
             @Index(name = "ix_order_restaurant_status", columnList = "restaurant_id,status"),
+            @Index(name = "ix_order_restaurant_updated", columnList = "restaurant_id,updated_at"),
             @Index(name = "ix_order_partner", columnList = "partner_id")
         })
 @Check(constraints = "total > 0")

@@ -25,17 +25,97 @@ The project implements the supplied [problem statement](Food%20Delivery%20Order%
 
 ## Features
 
-- Manage users with admin, restaurant-owner, customer, and delivery-partner roles.
-- Manage cities, restaurants, menus, availability, prices, and stock.
-- Search restaurant names and menu names/descriptions with pagination.
-- Configure daily restaurant opening hours and reject new orders while closed.
-- Place idempotent customer orders with simulated payment processing.
-- Enforce order ownership, role permissions, and lifecycle transitions.
-- Let delivery partners discover and claim eligible orders in their city.
-- Restore stock and refund the simulated payment when an order is rejected or cancelled.
-- Record order history and deliver asynchronous in-application notifications.
-- Allow one customer review for each delivered order.
-- Expose interactive OpenAPI documentation through Swagger UI.
+### User and role management
+
+- Public customer registration with username, full name, email address, and phone number.
+- Admin creation of `ADMIN`, `OWNER`, `CUSTOMER`, and `PARTNER` users.
+- Unique username, email, and phone-number validation.
+- Profile lookup through `X-User-Id`.
+- Role-based and ownership-based authorization for every protected operation.
+
+### City and restaurant management
+
+- Admin creation and updating of serviceable cities.
+- Admin creation and updating of restaurants, including their owner, city, address, and active state.
+- Public paginated restaurant listing with city filtering.
+- Case-insensitive restaurant-name search.
+- Individual restaurant details with current opening status.
+- Restaurant activation checks that also respect the parent city's active state.
+
+### Opening hours
+
+- Owner or admin configuration of daily restaurant opening and closing times.
+- Support for normal daytime and overnight schedules, such as `18:00` to `02:00`.
+- Configurable restaurant timezone, defaulting to `Asia/Kolkata`.
+- `openNow` information in restaurant responses.
+- Automatic rejection of new orders while a restaurant is inactive or closed.
+- Optional all-day operation when opening hours are not configured.
+
+### Menu and inventory management
+
+- Public paginated menu browsing for each restaurant.
+- Case-insensitive search across menu-item names and descriptions.
+- Owner or admin creation and updating of menu items.
+- Management of item name, description, price, stock, and availability.
+- Signed stock adjustments for restocking or correcting inventory.
+- Transactional stock reservation during checkout.
+- Automatic stock restoration after order cancellation or rejection.
+- Database row locking and deterministic lock ordering to prevent overselling.
+
+### Ordering and payments
+
+- Customer ordering from one restaurant with multiple menu items.
+- Server-side price calculation using the current menu prices.
+- Historical order lines that preserve item names and prices after menu changes.
+- Required customer-scoped `Idempotency-Key` support to prevent duplicate orders.
+- Safe replay of the same order request and rejection of conflicting key reuse.
+- Simulated successful and declined payments using `TEST_SUCCESS` and `TEST_DECLINE`.
+- Atomic checkout: failed payment, invalid stock, or validation errors roll back the entire order.
+- Payment states and simulated refunds for rejected or cancelled orders.
+- Paginated order listing with role-specific visibility and optional status filtering.
+- Detailed order lookup including items, payment, assigned partner, and event history.
+
+### Order lifecycle
+
+- Successful lifecycle: `PLACED → ACCEPTED → PREPARING → OUT_FOR_DELIVERY → DELIVERED`.
+- Customer cancellation while an order is eligible for cancellation.
+- Restaurant-owner rejection while an order is eligible for rejection.
+- Actor checks so only the correct customer, restaurant owner, or assigned partner can perform each transition.
+- Persistent order-event history for auditing each lifecycle change.
+
+### Delivery-partner management
+
+- Admin creation, listing, activation, deactivation, and city assignment of delivery-partner profiles.
+- Partner profile lookup with current active-order information.
+- Discovery of claimable orders in the partner's city.
+- Atomic order claiming so simultaneous partners cannot claim the same order.
+- One active order per delivery partner.
+- Prevention of city changes or deactivation while a partner has an active order.
+- Automatic partner release when an order is delivered or otherwise completed.
+
+### Reviews and ratings
+
+- One review per delivered order.
+- Reviews restricted to the customer who placed the order.
+- Ratings from 1 to 5 with an optional comment.
+- Public paginated restaurant reviews and calculated average rating.
+
+### Notifications and background processing
+
+- Transactional `OrderEvent` creation whenever an order changes.
+- Scheduled processing of pending events.
+- Asynchronous notification dispatch through a configurable thread pool.
+- In-application notification inboxes for customers, restaurant owners, and assigned partners.
+- Reliable event acknowledgement together with notification persistence.
+
+### API quality and reliability
+
+- Swagger UI and generated OpenAPI JSON documentation.
+- Jakarta Bean Validation for request bodies, headers, query parameters, and pagination.
+- Consistent JSON error responses for validation, authorization, missing resources, conflicts, and payment declines.
+- Rejection of unknown JSON fields and unsupported endpoints or methods.
+- Native SQL queries, pagination counts, database constraints, and pessimistic locking for critical workflows.
+- Integration coverage for every controller route, complete lifecycles, rollback behavior, asynchronous notifications, and concurrency conflicts.
 
 ## Technology
 
@@ -520,7 +600,12 @@ Run the complete integration suite with:
 mvn test
 ```
 
-The suite covers every controller route, full order lifecycles, validation and rollback paths, asynchronous notification delivery, idempotency, stock restoration, and real concurrent requests for stock reservation and delivery-partner claims. Each test uses an isolated H2 database and does not touch the normal `./data` database.
+The test suite currently contains 97 passing test cases:
+
+- 88 unit-test cases covering authorization, every valid and invalid order transition, transition roles, restaurant daytime and overnight hours, stock adjustment boundaries, user normalization and duplicate detection, and review rules.
+- 9 integration-test cases covering every controller route, full order lifecycles, validation and rollback paths, asynchronous notification delivery, idempotency, stock restoration, and real concurrent requests for stock reservation and delivery-partner claims.
+
+Unit tests run without a Spring context. Integration tests use isolated in-memory H2 databases and do not touch the normal `./data` database.
 
 To compile and package without executing the suite:
 
