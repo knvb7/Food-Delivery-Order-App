@@ -49,22 +49,22 @@ public interface SalesReportRepository extends Repository<CustomerOrder, Long> {
     @Query(
             value =
                     """
-SELECT CAST(o.updated_at AT TIME ZONE :timeZone AS DATE) AS reportDate,
-       SUM(CASE WHEN o.status = 'DELIVERED' AND p.status = 'CAPTURED'
-                THEN p.amount ELSE 0 END) AS revenue,
-       SUM(CASE WHEN o.status = 'DELIVERED' AND p.status = 'CAPTURED'
-                THEN 1 ELSE 0 END) AS deliveredOrders,
-       SUM(CASE WHEN o.status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelledOrders,
-       SUM(CASE WHEN o.status = 'REJECTED' THEN 1 ELSE 0 END) AS rejectedOrders
-FROM orders o
-JOIN payments p ON p.order_id = o.id
-WHERE o.restaurant_id = :restaurantId
-  AND o.updated_at >= :start
-  AND o.updated_at < :end
-  AND o.status IN ('DELIVERED', 'CANCELLED', 'REJECTED')
-GROUP BY CAST(o.updated_at AT TIME ZONE :timeZone AS DATE)
-ORDER BY reportDate
-""",
+                    SELECT CAST(o.updated_at AT TIME ZONE :timeZone AS DATE) AS reportDate,
+                           SUM(CASE WHEN o.status = 'DELIVERED' AND p.status = 'CAPTURED'
+                                    THEN p.amount ELSE 0 END) AS revenue,
+                           SUM(CASE WHEN o.status = 'DELIVERED' AND p.status = 'CAPTURED'
+                                    THEN 1 ELSE 0 END) AS deliveredOrders,
+                           SUM(CASE WHEN o.status = 'CANCELLED' THEN 1 ELSE 0 END) AS cancelledOrders,
+                           SUM(CASE WHEN o.status = 'REJECTED' THEN 1 ELSE 0 END) AS rejectedOrders
+                    FROM orders o
+                    JOIN payments p ON p.order_id = o.id
+                    WHERE o.restaurant_id = :restaurantId
+                      AND o.updated_at >= :start
+                      AND o.updated_at < :end
+                      AND o.status IN ('DELIVERED', 'CANCELLED', 'REJECTED')
+                    GROUP BY reportDate
+                    ORDER BY reportDate
+                    """,
             nativeQuery = true)
     List<DailySalesRow> dailySales(
             @Param("restaurantId") long restaurantId,

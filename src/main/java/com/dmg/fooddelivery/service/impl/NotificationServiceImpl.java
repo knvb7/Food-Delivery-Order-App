@@ -74,9 +74,12 @@ public class NotificationServiceImpl implements NotificationService {
         }
 
         for (long recipientId : recipients) {
+            NotificationContent content = contentFor(event, recipientId);
             Notification notification = new Notification();
             notification.setEvent(event);
             notification.setRecipientId(recipientId);
+            notification.setTitle(content.title());
+            notification.setMessage(content.message());
             notificationRepository.save(notification);
         }
 
@@ -96,12 +99,151 @@ public class NotificationServiceImpl implements NotificationService {
 
     private NotificationResponse toResponse(Notification notification) {
         OrderEvent event = notification.getEvent();
+        NotificationContent fallback = contentFor(event, notification.getRecipientId());
+        String title = notification.getTitle() == null ? fallback.title() : notification.getTitle();
+        String message =
+                notification.getMessage() == null ? fallback.message() : notification.getMessage();
 
         return new NotificationResponse(
                 notification.getId(),
                 event.getOrder().getId(),
                 event.getType(),
                 event.getStatus(),
+                title,
+                message,
                 notification.getCreatedAt());
     }
+
+    private NotificationContent contentFor(OrderEvent event, long recipientId) {
+        if (recipientId == event.getCustomerId()) {
+            return customerContent(event);
+        }
+        if (recipientId == event.getOwnerId()) {
+            return ownerContent(event);
+        }
+
+        return partnerContent(event);
+    }
+
+    private NotificationContent customerContent(OrderEvent event) {
+        long orderId = event.getOrder().getId();
+        String restaurantName = event.getOrder().getRestaurant().getName();
+        if ("PARTNER_ASSIGNED".equals(event.getType())) {
+            String partnerName = event.getOrder().getPartner().getUser().getFullName();
+            return new NotificationContent(
+                    "Delivery partner assigned",
+                    partnerName + " has been assigned to deliver your order #" + orderId + ".");
+        }
+
+        return switch (event.getStatus()) {
+            case PLACED ->
+                    new NotificationContent(
+                            "Order placed",
+                            "Your order #" + orderId + " was placed with " + restaurantName + ".");
+            case ACCEPTED ->
+                    new NotificationContent(
+                            "Order accepted",
+                            restaurantName + " accepted your order #" + orderId + ".");
+            case PREPARING ->
+                    new NotificationContent(
+                            "Order is being prepared",
+                            restaurantName + " is preparing your order #" + orderId + ".");
+            case OUT_FOR_DELIVERY ->
+                    new NotificationContent(
+                            "Order is on the way",
+                            "Your order #" + orderId + " is out for delivery.");
+            case DELIVERED ->
+                    new NotificationContent(
+                            "Order delivered",
+                            "Your order #" + orderId + " was delivered. You can now review it.");
+            case REJECTED ->
+                    new NotificationContent(
+                            "Order rejected",
+                            restaurantName
+                                    + " rejected order #"
+                                    + orderId
+                                    + ". The payment was refunded.");
+            case CANCELLED ->
+                    new NotificationContent(
+                            "Order cancelled",
+                            "Your order #" + orderId + " was cancelled and the payment was refunded.");
+        };
+    }
+
+    private NotificationContent ownerContent(OrderEvent event) {
+        long orderId = event.getOrder().getId();
+        if ("PLACED".equals(event.getType())) {
+            return new NotificationContent(
+                    "New order received", "A customer placed order #" + orderId + ".");
+        }
+        if ("PARTNER_ASSIGNED".equals(event.getType())) {
+            String partnerName = event.getOrder().getPartner().getUser().getFullName();
+            return new NotificationContent(
+                    "Delivery partner assigned",
+                    partnerName + " was assigned to order #" + orderId + ".");
+        }
+
+        return switch (event.getStatus()) {
+            case PLACED ->
+                    new NotificationContent(
+                            "New order received", "A customer placed order #" + orderId + ".");
+            case ACCEPTED ->
+                    new NotificationContent(
+                            "Order accepted", "Order #" + orderId + " was accepted.");
+            case PREPARING ->
+                    new NotificationContent(
+                            "Order preparation started",
+                            "Order #" + orderId + " is now being prepared.");
+            case OUT_FOR_DELIVERY ->
+                    new NotificationContent(
+                            "Order picked up",
+                            "Order #" + orderId + " is now out for delivery.");
+            case DELIVERED ->
+                    new NotificationContent(
+                            "Order completed", "Order #" + orderId + " was delivered.");
+            case REJECTED ->
+                    new NotificationContent(
+                            "Order rejected",
+                            "Order #" + orderId + " was rejected and its stock was restored.");
+            case CANCELLED ->
+                    new NotificationContent(
+                            "Order cancelled by customer",
+                            "The customer cancelled order #"
+                                    + orderId
+                                    + "; its stock was restored.");
+        };
+    }
+
+    private NotificationContent partnerContent(OrderEvent event) {
+        long orderId = event.getOrder().getId();
+        if ("PARTNER_ASSIGNED".equals(event.getType())) {
+            return new NotificationContent(
+                    "New delivery assigned",
+                    "You have been assigned order #"
+                            + orderId
+                            + " from "
+                            + event.getOrder().getRestaurant().getName()
+                            + ".");
+        }
+
+        return switch (event.getStatus()) {
+            case PREPARING ->
+                    new NotificationContent(
+                            "Order is being prepared",
+                            "Order #" + orderId + " is being prepared for pickup.");
+            case OUT_FOR_DELIVERY ->
+                    new NotificationContent(
+                            "Delivery started", "You are delivering order #" + orderId + ".");
+            case DELIVERED ->
+                    new NotificationContent(
+                            "Delivery completed",
+                            "Order #" + orderId + " was delivered successfully.");
+            default ->
+                    new NotificationContent(
+                            "Order update",
+                            "Order #" + orderId + " is now " + event.getStatus() + ".");
+        };
+    }
+
+    private record NotificationContent(String title, String message) {}
 }

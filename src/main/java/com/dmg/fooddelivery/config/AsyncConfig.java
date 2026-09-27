@@ -22,7 +22,7 @@ public class AsyncConfig implements AsyncConfigurer {
     @Bean(name = "notificationTaskExecutor")
     public Executor notificationTaskExecutor(
             @Value("${app.async.core-pool-size:2}") int corePoolSize,
-            @Value("${app.async.max-pool-size:4}") int maxPoolSize,
+            @Value("${app.async.max-pool-size:5}") int maxPoolSize,
             @Value("${app.async.queue-capacity:100}") int queueCapacity) {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
         executor.setCorePoolSize(corePoolSize);
@@ -31,22 +31,7 @@ public class AsyncConfig implements AsyncConfigurer {
         executor.setThreadNamePrefix("notification-");
         executor.setWaitForTasksToCompleteOnShutdown(true);
         executor.setAwaitTerminationSeconds(30);
-        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         executor.initialize();
-
         return executor;
-    }
-
-    @Override
-    public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
-        return this::handleAsyncException;
-    }
-
-    private void handleAsyncException(Throwable exception, Method method, Object... parameters) {
-        log.error(
-                "Async method {} failed with parameters {}",
-                method.getName(),
-                Arrays.toString(parameters),
-                exception);
     }
 }

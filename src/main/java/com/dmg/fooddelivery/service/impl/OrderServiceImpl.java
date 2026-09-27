@@ -129,7 +129,6 @@ public class OrderServiceImpl implements OrderService {
     }
 
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public OrderResponse get(long actorId, long id) {
         CustomerOrder order =
                 orderRepository.findById(id).orElseThrow(() -> ApiException.notFound("Order"));

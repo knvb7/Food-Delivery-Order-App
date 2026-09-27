@@ -6,12 +6,15 @@ import com.dmg.fooddelivery.dto.OrderDtos.PlaceOrder;
 import com.dmg.fooddelivery.dto.OrderDtos.Placement;
 import com.dmg.fooddelivery.dto.OrderDtos.StatusUpdate;
 import com.dmg.fooddelivery.dto.PageResponse;
+import com.dmg.fooddelivery.dto.ReorderDtos.ReorderBasket;
 import com.dmg.fooddelivery.model.OrderStatus;
 import com.dmg.fooddelivery.service.OrderService;
+import com.dmg.fooddelivery.service.ReorderService;
 
 import jakarta.validation.Valid;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.CacheControl;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
@@ -31,6 +34,9 @@ public class OrderController {
 
     @Autowired
     private OrderService orderService;
+
+    @Autowired
+    private ReorderService reorderService;
 
     @PostMapping
     public ResponseEntity<OrderResponse> place(
@@ -57,6 +63,14 @@ public class OrderController {
     @GetMapping("/{id}")
     public OrderResponse get(@RequestHeader("X-User-Id") long actorId, @PathVariable long id) {
         return orderService.get(actorId, id);
+    }
+
+    @GetMapping("/{id}/reorder")
+    public ResponseEntity<ReorderBasket> reorder(
+            @RequestHeader("X-User-Id") long actorId, @PathVariable long id) {
+        return ResponseEntity.ok()
+                .cacheControl(CacheControl.noStore())
+                .body(reorderService.buildBasket(actorId, id));
     }
 
     @PatchMapping("/{id}/status")

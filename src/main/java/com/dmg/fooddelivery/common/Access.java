@@ -5,7 +5,6 @@ import com.dmg.fooddelivery.model.Restaurant;
 import com.dmg.fooddelivery.model.Role;
 import com.dmg.fooddelivery.model.User;
 
-/** Demo authorization only: the caller selects a stored user through X-User-Id. */
 public final class Access {
 
     private Access() {}

@@ -39,24 +39,6 @@ public class ApiExceptionHandler {
                                 exception.getMessage()));
     }
 
-    @ExceptionHandler(MethodArgumentNotValidException.class)
-    ResponseEntity<ApiError> validation(MethodArgumentNotValidException exception) {
-        Map<String, String> validationErrors = new LinkedHashMap<>();
-        for (FieldError fieldError : exception.getBindingResult().getFieldErrors()) {
-            validationErrors.putIfAbsent(fieldError.getField(), fieldError.getDefaultMessage());
-        }
-
-        ApiError error =
-                new ApiError(
-                        Instant.now(),
-                        400,
-                        "VALIDATION_FAILED",
-                        "Input validation failed",
-                        validationErrors);
-
-        return ResponseEntity.badRequest().body(error);
-    }
-
     @ExceptionHandler({
         HttpMessageNotReadableException.class,
         MethodArgumentTypeMismatchException.class,

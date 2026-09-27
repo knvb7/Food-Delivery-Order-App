@@ -10,7 +10,13 @@ import java.util.List;
 public interface NotificationService {
 
     record NotificationResponse(
-            long id, long orderId, String type, OrderStatus status, Instant createdAt) {}
+            long id,
+            long orderId,
+            String type,
+            OrderStatus status,
+            String title,
+            String message,
+            Instant createdAt) {}
 
     void recordEvent(CustomerOrder order, String type, long actorId);
 

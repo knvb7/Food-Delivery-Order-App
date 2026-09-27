@@ -8,6 +8,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
+import java.util.List;
 import java.util.Optional;
 
 public interface MenuItemRepository extends JpaRepository<MenuItem, Long> {
@@ -32,4 +33,18 @@ public interface MenuItemRepository extends JpaRepository<MenuItem, Long> {
 
     @Query(value = "SELECT * FROM menu_items WHERE id = :id FOR UPDATE", nativeQuery = true)
     Optional<MenuItem> findLockedById(@Param("id") long id);
+
+    @Query(
+            value =
+                    """
+                    SELECT m.*
+                    FROM menu_items m
+                    JOIN order_items i ON i.menu_item_id = m.id
+                    WHERE i.order_id = :orderId
+                      AND m.restaurant_id = :restaurantId
+                    ORDER BY m.id
+                    """,
+            nativeQuery = true)
+    List<MenuItem> findForReorder(
+            @Param("orderId") long orderId, @Param("restaurantId") long restaurantId);
 }

@@ -16,6 +16,8 @@ The project implements the supplied [problem statement](Food%20Delivery%20Order%
 - [Order lifecycle](#order-lifecycle)
 - [API reference](#api-reference)
 - [Search and opening hours](#search-and-opening-hours)
+- [Sales reports](#sales-reports)
+- [Reordering](#reordering)
 - [Example order flow](#example-order-flow)
 - [Business rules](#business-rules)
 - [Errors and validation](#errors-and-validation)
@@ -74,6 +76,8 @@ The project implements the supplied [problem statement](Food%20Delivery%20Order%
 - Payment states and simulated refunds for rejected or cancelled orders.
 - Paginated order listing with role-specific visibility and optional status filtering.
 - Detailed order lookup including items, payment, assigned partner, and event history.
+- Reorder baskets built from a customer's previous order using current prices and available stock.
+- Per-item explanations for price changes, reduced quantities, and skipped items before checkout.
 
 ### Order lifecycle
 
@@ -108,6 +112,14 @@ The project implements the supplied [problem statement](Food%20Delivery%20Order%
 - In-application notification inboxes for customers, restaurant owners, and assigned partners.
 - Reliable event acknowledgement together with notification persistence.
 
+### Restaurant sales reporting
+
+- Restaurant reports restricted to the owning user or an admin.
+- Daily revenue and delivered-order counts, including days with no sales.
+- Popular dishes ranked by units sold, with revenue calculated from historical order prices.
+- Separate cancellation and rejection counts, plus paginated cancelled-order details.
+- Inclusive date ranges interpreted in the configured restaurant timezone.
+
 ### API quality and reliability
 
 - Swagger UI and generated OpenAPI JSON documentation.
@@ -115,7 +127,7 @@ The project implements the supplied [problem statement](Food%20Delivery%20Order%
 - Consistent JSON error responses for validation, authorization, missing resources, conflicts, and payment declines.
 - Rejection of unknown JSON fields and unsupported endpoints or methods.
 - Native SQL queries, pagination counts, database constraints, and pessimistic locking for critical workflows.
-- Integration coverage for every controller route, complete lifecycles, rollback behavior, asynchronous notifications, and concurrency conflicts.
+- Unit coverage for sales reports and business rules; integration coverage for catalog and order flows, rollback behavior, asynchronous notifications, and concurrency conflicts.
 
 ## Technology
 
@@ -322,6 +334,7 @@ Paginated responses contain `content`, `page`, `size`, and `totalElements`.
 | `PUT` | `/api/admin/cities/{id}` | Admin | Update a city |
 | `GET` | `/api/restaurants` | Public | List restaurants; optionally filter by `cityId` and search name with `q` |
 | `GET` | `/api/restaurants/{id}` | Public | Get one restaurant |
+| `GET` | `/api/restaurants/{restaurantId}/sales-report` | Owner or admin | Daily revenue, popular dishes, and cancelled orders for a date range |
 | `POST` | `/api/admin/restaurants` | Admin | Create a restaurant |
 | `PUT` | `/api/admin/restaurants/{id}` | Admin | Update restaurant name, address, and active state |
 | `PUT` | `/api/restaurants/{id}/opening-hours` | Owner or admin | Set or clear a restaurant's daily opening hours |
@@ -347,6 +360,7 @@ Paginated responses contain `content`, `page`, `size`, and `totalElements`.
 | `POST` | `/api/orders` | Customer | Place an order; requires `Idempotency-Key` |
 | `GET` | `/api/orders` | Authenticated role | List visible orders; optionally filter by `status` |
 | `GET` | `/api/orders/{id}` | Authorized participant or admin | Get order details, payment, lines, and history |
+| `GET` | `/api/orders/{id}/reorder` | Purchasing customer | Preview a basket using current prices and availability |
 | `PATCH` | `/api/orders/{id}/status` | Authorized participant | Change order status |
 | `POST` | `/api/orders/{id}/claim` | Partner | Claim an accepted or preparing order |
 
@@ -357,6 +371,30 @@ Paginated responses contain `content`, `page`, `size`, and `totalElements`.
 | `POST` | `/api/orders/{id}/review` | Purchasing customer | Review a delivered order |
 | `GET` | `/api/restaurants/{id}/reviews` | Public | List reviews and average rating |
 | `GET` | `/api/notifications` | `X-User-Id` | List the selected user's notifications |
+
+Notification responses include recipient-specific `title` and `message` fields in addition to the
+order ID, event type, order status, and creation time. For example, the same partner-assignment
+event produces different content for each recipient:
+
+```json
+{
+  "customer": {
+    "title": "Delivery partner assigned",
+    "message": "Demo Partner has been assigned to deliver your order #15."
+  },
+  "owner": {
+    "title": "Delivery partner assigned",
+    "message": "Demo Partner was assigned to order #15."
+  },
+  "partner": {
+    "title": "New delivery assigned",
+    "message": "You have been assigned order #15 from Spice Kitchen."
+  }
+}
+```
+
+The actual inbox endpoint returns only the notifications belonging to the user identified by
+`X-User-Id`; the grouped object above illustrates how one event is customized for each role.
 
 ## Search and opening hours
 
@@ -390,6 +428,134 @@ Content-Type: application/json
 - Both times must be supplied together and must differ. Set both to `null` to restore all-day opening. New and existing restaurants without configured hours keep their all-day behavior.
 - Restaurant responses include `opensAt`, `closesAt`, `timeZone`, and `openNow`. Inactive restaurants or cities always have `openNow: false`. Search results still include closed restaurants so their schedules remain visible.
 - Checkout checks opening hours before reserving stock or creating a payment and returns HTTP `409` while closed. Existing orders can still progress, and replaying a successful idempotency key returns the original order even after closing.
+
+## Sales reports
+
+```bash
+curl 'http://localhost:8080/api/restaurants/1/sales-report?from=2026-09-25&to=2026-09-27&top=5&page=0&size=20' \
+  -H 'X-User-Id: 2'
+```
+
+Owners can read reports only for their own restaurants. Admins can read any restaurant's report. Customers, delivery partners, and other owners receive HTTP `403`; a missing restaurant returns `404`.
+
+| Parameter | Required/default | Meaning |
+| --- | --- | --- |
+| `from` | Required | First included local date, `YYYY-MM-DD` |
+| `to` | Required | Last included local date, `YYYY-MM-DD`; inclusive range limited to 366 days |
+| `top` | `5` | Number of popular dishes, from 1 to 50 |
+| `page` | `0` | Zero-based cancelled-orders page, from 0 to 100000 |
+| `size` | `20` | Cancelled-orders page size, from 1 to 100 |
+
+Example response for one delivered order, one customer cancellation, and no restaurant rejections:
+
+```json
+{
+  "restaurantId": 1,
+  "from": "2026-09-27",
+  "to": "2026-09-27",
+  "timeZone": "Asia/Kolkata",
+  "currency": "INR",
+  "totalRevenue": 360.00,
+  "deliveredOrderCount": 1,
+  "cancelledOrderCount": 1,
+  "rejectedOrderCount": 0,
+  "dailySales": [
+    {
+      "date": "2026-09-27",
+      "revenue": 360.00,
+      "deliveredOrders": 1,
+      "cancelledOrders": 1,
+      "rejectedOrders": 0
+    }
+  ],
+  "popularDishes": [
+    {"menuItemId": 1, "name": "Paneer Bowl", "quantity": 2, "revenue": 360.00}
+  ],
+  "cancelledOrders": {
+    "content": [
+      {
+        "orderId": 2,
+        "amount": 120.00,
+        "placedAt": "2026-09-27T06:00:00Z",
+        "cancelledAt": "2026-09-27T06:05:00Z"
+      }
+    ],
+    "page": 0,
+    "size": 20,
+    "totalElements": 1
+  }
+}
+```
+
+Reporting rules:
+
+- Revenue sums captured payments on `DELIVERED` orders. Pending, cancelled, rejected, refunded, and declined orders contribute no revenue or dish sales. A payment is counted once even when an order has several items.
+- Dates refer to delivery, cancellation, or rejection, using the order's final `updatedAt` timestamp. Terminal states cannot transition again in the current lifecycle. An order placed yesterday and delivered today contributes to today's revenue.
+- Daily boundaries use `app.restaurant.time-zone` (default `Asia/Kolkata`). The first midnight is included; midnight after `to` is excluded. Daylight-saving changes are respected for other configured zones.
+- `dailySales` includes every requested date in ascending order, filling missing dates with zero amounts and counts. Summary totals cover the full range, independently of `top`, `page`, or `size`.
+- Popular dishes are grouped by menu-item ID, ordered by quantity descending, then revenue descending, then ID ascending. Revenue uses the saved order-line price and quantity; the displayed name is the current menu name. Later price edits do not change sales amounts.
+- `cancelledOrders` contains customer-cancelled orders, ordered by order ID descending, without customer contact details or delivery addresses. Restaurant rejections are counted separately. A cancellation amount describes the refunded order value and is not revenue.
+- All report queries run inside one read-only repeatable-read transaction. Queries use native SQL and an index on restaurant ID and completion time.
+- Invalid or missing dates, reversed/overlong ranges, and invalid limits return HTTP `400`. These reports describe this application's simulated payments, not an external accounting ledger.
+
+## Reordering
+
+The customer who placed an order can rebuild its basket. Any previous order status is allowed, including cancelled or rejected orders. Other customers and non-customer roles receive HTTP `403`; a missing order returns `404`.
+
+```bash
+curl 'http://localhost:8080/api/orders/1/reorder' \
+  -H 'X-User-Id: 4'
+```
+
+For example, an order originally containing three Paneer Bowls at INR 180 each now has only two portions available at INR 250 each:
+
+```json
+{
+    "sourceOrderId": 1,
+    "restaurantId": 1,
+    "deliveryAddress": "42 Lake Road, Mumbai",
+    "currency": "INR",
+    "total": 500.00,
+    "lines": [
+        {
+            "menuItemId": 1,
+            "name": "Paneer Bowl",
+            "previousUnitPrice": 180.00,
+            "unitPrice": 250.00,
+            "requestedQuantity": 3,
+            "quantity": 2,
+            "priceChanged": true,
+            "availability": "QUANTITY_REDUCED"
+        }
+    ],
+    "items": [{"menuItemId": 1, "quantity": 2}],
+    "canCheckout": true,
+    "blockReason": null
+}
+```
+
+- `lines` describes every original item. Current names and prices replace historical values for the proposed basket; the source order keeps its original details.
+- `AVAILABLE` retains the original quantity. `QUANTITY_REDUCED` limits it to current stock. `UNAVAILABLE`, `OUT_OF_STOCK`, and `NO_LONGER_OFFERED` lines have quantity zero and are excluded from checkout `items`. For an item no longer offered by that restaurant, `unitPrice` is `null` and the historical name is shown.
+- `total` sums only the selected quantities at current prices. `priceChanged` compares current and historical unit prices when a current item exists.
+- `canCheckout` is false for an inactive restaurant, inactive city, closed restaurant, or empty basket. `blockReason` reports the first applicable reason in that order: `RESTAURANT_INACTIVE`, `CITY_INACTIVE`, `RESTAURANT_CLOSED`, or `NO_AVAILABLE_ITEMS`. Opening hours use the configured restaurant timezone. The preview remains readable while checkout is blocked.
+- This is a read-only preview, returned with `Cache-Control: no-store`. It does not persist a cart, reserve stock, create an order, or charge a payment. The previous delivery address is a suggestion to review.
+
+After reviewing the preview, copy its `restaurantId`, selected `items`, and reviewed `deliveryAddress` into a normal checkout request. Choose a payment token and a **new** idempotency key; do not submit the entire preview response:
+
+```bash
+curl -X POST 'http://localhost:8080/api/orders' \
+  -H 'X-User-Id: 4' \
+  -H 'Idempotency-Key: reorder-001' \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "restaurantId": 1,
+    "items": [{"menuItemId": 1, "quantity": 2}],
+    "deliveryAddress": "42 Lake Road, Mumbai",
+    "paymentToken": "TEST_SUCCESS"
+  }'
+```
+
+The preview is an estimate. Checkout checks current prices, availability, stock, and opening hours again using the existing transaction and locking flow. The charged amount may change if prices change after preview; stock or availability changes can cause checkout to fail. Replaying the new checkout key returns that new order without another charge.
 
 ## Example order flow
 
@@ -487,6 +653,7 @@ curl -X POST http://localhost:8080/api/orders/1/review \
 - Each order change creates an `OrderEvent` in the same transaction as the business change.
 - A scheduled worker converts pending events into inbox notifications.
 - Customer and restaurant owner receive order notifications; the assigned partner is included when present.
+- Every recipient receives a tailored title and message for placement, acceptance, preparation, assignment, delivery, cancellation, and rejection events.
 - Notification creation and event acknowledgement commit together.
 
 ### Reviews
@@ -536,7 +703,7 @@ Configuration lives in [`src/main/resources/application.properties`](src/main/re
 | `DB_PASSWORD` | Empty | Database password |
 | `DEMO_DATA` | `true` | Seed demo data when the users table is empty |
 | `server.port` | `8080` | HTTP port |
-| `app.restaurant.time-zone` / `RESTAURANT_TIME_ZONE` | `Asia/Kolkata` | Timezone shared by all restaurant schedules |
+| `app.restaurant.time-zone` / `RESTAURANT_TIME_ZONE` | `Asia/Kolkata` | Timezone used by restaurant schedules and sales reports |
 | `app.notifications.enabled` | `true` | Enable the scheduled notification worker |
 | `app.notifications.initial-delay-ms` | `5000` | Delay before the first notification scan |
 | `app.notifications.delay-ms` | `500` | Delay between notification scans |
@@ -594,18 +761,26 @@ Useful supporting files:
 
 ## Verification
 
-Run the complete integration suite with:
+Run all unit and integration tests with:
 
 ```bash
 mvn test
 ```
 
-The test suite currently contains 97 passing test cases:
+The suite covers:
 
-- 88 unit-test cases covering authorization, every valid and invalid order transition, transition roles, restaurant daytime and overnight hours, stock adjustment boundaries, user normalization and duplicate detection, and review rules.
-- 9 integration-test cases covering every controller route, full order lifecycles, validation and rollback paths, asynchronous notification delivery, idempotency, stock restoration, and real concurrent requests for stock reservation and delivery-partner claims.
+- Unit tests for authorization, valid and invalid order transitions, transition roles, restaurant daytime and overnight hours, stock adjustment boundaries, user normalization and duplicate detection, review rules, and sales reports.
+- Integration tests for catalog and order routes, full order lifecycles, validation and rollback paths, asynchronous notification delivery, idempotency, stock restoration, and real concurrent requests for stock reservation and delivery-partner claims.
 
 Unit tests run without a Spring context. Integration tests use isolated in-memory H2 databases and do not touch the normal `./data` database.
+
+Run only the sales-report unit tests with:
+
+```bash
+mvn -Dtest=SalesReportServiceImplTest,SalesReportControllerTest test
+```
+
+These 25 cases cover owner/admin access, denied roles and other owners, missing restaurants, exact revenue totals, zero-sales dates, separate rejection/cancellation counts, pagination, date and size limits, leap years, daylight-saving boundaries, request binding, and HTTP error responses. Repository dependencies are mocked in these unit tests; native SQL is additionally checked through manual requests against a separate H2 database. This feature's verification does not rerun the other suites.
 
 To compile and package without executing the suite:
 

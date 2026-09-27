@@ -12,13 +12,11 @@ import java.util.Optional;
 
 public interface OrderEventRepository extends JpaRepository<OrderEvent, Long> {
 
-    @Query(
-            value = "SELECT * FROM order_events WHERE order_id = :orderId ORDER BY id ASC",
+    @Query(value = "SELECT * FROM order_events WHERE order_id = :orderId ORDER BY id ASC",
             nativeQuery = true)
     List<OrderEvent> findByOrderIdOrderByIdAsc(@Param("orderId") long orderId);
 
-    @Query(
-            value = "SELECT id FROM order_events WHERE dispatched = FALSE ORDER BY id ASC",
+    @Query(value = "SELECT id FROM order_events WHERE dispatched = FALSE ORDER BY id ASC",
             nativeQuery = true)
     List<Long> findPendingIds(Pageable pageable);
 
