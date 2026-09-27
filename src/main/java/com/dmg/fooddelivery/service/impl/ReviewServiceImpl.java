@@ -48,10 +48,7 @@ public class ReviewServiceImpl implements ReviewService {
     public ReviewResponse create(long actorId, long orderId, ReviewInput input) {
         User customer = userService.get(actorId);
         Access.requireRole(customer, Role.CUSTOMER);
-        CustomerOrder order =
-                orderRepository
-                        .findLockedById(orderId)
-                        .orElseThrow(() -> ApiException.notFound("Order"));
+        CustomerOrder order = orderRepository.findLockedById(orderId).orElseThrow(() -> ApiException.notFound("Order"));
         Access.requireOrderAccess(customer, order);
         if (order.getStatus() != OrderStatus.DELIVERED) {
             throw ApiException.conflict("Only delivered orders can be reviewed");
@@ -72,7 +69,7 @@ public class ReviewServiceImpl implements ReviewService {
     }
 
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Transactional(readOnly = true)
     public RestaurantReviews list(long restaurantId, int page, int size) {
         Pageable pageable = PageResponse.request(page, size);
         if (!restaurantRepository.existsById(restaurantId)) {

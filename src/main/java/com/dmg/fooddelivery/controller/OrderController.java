@@ -69,7 +69,6 @@ public class OrderController {
     public ResponseEntity<ReorderBasket> reorder(
             @RequestHeader("X-User-Id") long actorId, @PathVariable long id) {
         return ResponseEntity.ok()
-                .cacheControl(CacheControl.noStore())
                 .body(reorderService.buildBasket(actorId, id));
     }
 

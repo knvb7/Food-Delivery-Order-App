@@ -61,8 +61,7 @@ public interface OrderRepository extends JpaRepository<CustomerOrder, Long> {
             @Param("status") String status,
             Pageable pageable);
 
-    @Query(
-            value = "SELECT o.* " + AVAILABLE_ORDERS,
+    @Query(value = "SELECT o.* " + AVAILABLE_ORDERS,
             countQuery = "SELECT COUNT(*) " + AVAILABLE_ORDERS,
             nativeQuery = true)
     Page<CustomerOrder> findAvailable(@Param("cityId") long cityId, Pageable pageable);

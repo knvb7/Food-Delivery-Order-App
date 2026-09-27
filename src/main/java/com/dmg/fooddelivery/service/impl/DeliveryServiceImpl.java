@@ -96,10 +96,8 @@ public class DeliveryServiceImpl implements DeliveryService {
             throw ApiException.conflict("Partner is inactive");
         }
 
-        return PageResponse.from(
-                orderRepository
-                        .findAvailable(partner.getCity().getId(), PageResponse.request(page, size))
-                        .map(AvailableOrder::from));
+        return PageResponse.from(orderRepository.findAvailable(partner.getCity().getId(),
+            PageResponse.request(page, size)).map(AvailableOrder::from));
     }
 
     private DeliveryPartner partnerForUser(long actorId) {

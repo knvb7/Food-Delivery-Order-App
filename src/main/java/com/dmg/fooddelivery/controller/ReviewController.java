@@ -37,9 +37,9 @@ public class ReviewController {
 
     @GetMapping("/restaurants/{id}/reviews")
     public RestaurantReviews list(
-            @PathVariable long id,
+            @PathVariable long restaurantId,
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "20") int size) {
-        return reviewService.list(id, page, size);
+        return reviewService.list(restaurantId, page, size);
     }
 }

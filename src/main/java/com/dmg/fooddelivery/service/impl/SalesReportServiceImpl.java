@@ -52,7 +52,7 @@ public class SalesReportServiceImpl implements SalesReportService {
     private Clock restaurantClock;
 
     @Override
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
+    @Transactional(readOnly = true)
     public SalesReport report(
             long actorId,
             long restaurantId,
@@ -66,9 +66,7 @@ public class SalesReportServiceImpl implements SalesReportService {
             throw ApiException.forbidden();
         }
 
-        Restaurant restaurant =
-                restaurantRepository
-                        .findById(restaurantId)
+        Restaurant restaurant = restaurantRepository.findById(restaurantId)
                         .orElseThrow(() -> ApiException.notFound("Restaurant"));
         Access.requireOwner(user, restaurant);
         validateRange(from, to, top);
@@ -91,8 +89,7 @@ public class SalesReportServiceImpl implements SalesReportService {
         }
 
         List<PopularDish> popularDishes = new ArrayList<>();
-        for (PopularDishRow dish :
-                salesReportRepository.popularDishes(restaurantId, start, end, top)) {
+        for (PopularDishRow dish : salesReportRepository.popularDishes(restaurantId, start, end, top)) {
             popularDishes.add(
                     new PopularDish(
                             dish.getMenuItemId(),
@@ -101,8 +98,7 @@ public class SalesReportServiceImpl implements SalesReportService {
                             dish.getRevenue()));
         }
 
-        Page<CustomerOrder> cancellations =
-                salesReportRepository.cancelledOrders(restaurantId, start, end, pageable);
+        Page<CustomerOrder> cancellations = salesReportRepository.cancelledOrders(restaurantId, start, end, pageable);
 
         return new SalesReport(
                 restaurantId,

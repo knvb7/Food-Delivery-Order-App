@@ -91,15 +91,11 @@ public class OrderServiceImpl implements OrderService {
     public Placement place(long actorId, PlaceOrder input, String key) {
         // Serialize this customer's requests so two first-time uses of the same key cannot both
         // reserve stock.
-        User customer =
-                userRepository
-                        .findLockedById(actorId)
-                        .orElseThrow(() -> ApiException.notFound("User"));
+        User customer = userRepository.findLockedById(actorId).orElseThrow(() -> ApiException.notFound("User"));
         Access.requireRole(customer, Role.CUSTOMER);
         List<LineInput> sortedItems = validateAndSortItems(input, key);
         String requestFingerprint = requestHash(input, sortedItems);
-        Optional<CustomerOrder> existingOrder =
-                orderRepository.findByCustomerIdAndIdempotencyKey(actorId, key);
+        Optional<CustomerOrder> existingOrder = orderRepository.findByCustomerIdAndIdempotencyKey(actorId, key);
         if (existingOrder.isPresent()) {
             CustomerOrder previousOrder = existingOrder.get();
             if (!previousOrder.getRequestHash().equals(requestFingerprint)) {
@@ -186,10 +182,7 @@ public class OrderServiceImpl implements OrderService {
         // All assignment-changing flows lock order first, then partner, including delivery
         // completion.
         CustomerOrder order = lockedOrder(id);
-        DeliveryPartner partner =
-                deliveryPartnerRepository
-                        .findLockedByUserId(actorId)
-                        .orElseThrow(() -> ApiException.notFound("Delivery partner profile"));
+        DeliveryPartner partner = deliveryPartnerRepository.findLockedByUserId(actorId).orElseThrow(() -> ApiException.notFound("Delivery partner profile"));
         if (order.getPartner() != null) {
             if (order.getPartner().getId().equals(partner.getId())) {
                 return response(order);
